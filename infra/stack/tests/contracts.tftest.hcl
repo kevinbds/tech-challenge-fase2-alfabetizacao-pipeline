@@ -79,14 +79,15 @@ run "platform_contract" {
     condition = (
       strcontains(output.stream_demo_workflow_contract, "correlation_id") &&
       strcontains(output.stream_demo_workflow_contract, "CORRELATION_ID") &&
-      strcontains(output.stream_demo_workflow_contract, "raw_start_offset") &&
-      strcontains(output.stream_demo_workflow_contract, "COUNT(DISTINCT event_id)") &&
-      strcontains(output.stream_demo_workflow_contract, "int(stream_result.body.rows[0].f[0].v) == 8") &&
+      strcontains(output.stream_demo_workflow_contract, "raw_archive_prefix") &&
+      strcontains(output.stream_demo_workflow_contract, "silver_count_query") &&
+      strcontains(output.stream_demo_workflow_contract, "expected: 8") &&
+      strcontains(output.stream_demo_workflow_contract, "backlog_and_dlq_assert_sql") &&
       strcontains(output.stream_demo_workflow_contract, "except:") &&
       strcontains(output.stream_demo_workflow_contract, "JOB_STATE_CANCELLED") &&
       strcontains(output.stream_demo_workflow_contract, "connector_params") &&
       strcontains(output.stream_demo_workflow_contract, "additionalUserLabels") &&
-      strcontains(output.stream_demo_workflow_contract, "RUN_ID") &&
+      strcontains(output.stream_demo_workflow_contract, "--correlation-id") &&
       strcontains(output.stream_demo_workflow_contract, "valid_table:") &&
       strcontains(output.stream_demo_workflow_contract, "quarantine_table:") &&
       !strcontains(output.stream_demo_workflow_contract, "output_table:") &&
@@ -96,6 +97,19 @@ run "platform_contract" {
       !strcontains(output.stream_demo_workflow_contract, "seconds: 600")
     )
     error_message = "O demo deve correlacionar arquivo e oito eventos Silver da execução atual, sem espera fixa."
+  }
+  assert {
+    condition = (
+      strcontains(output.stream_demo_workflow_contract, "guarded_execution:") &&
+      strcontains(output.stream_demo_workflow_contract, "cleanup_dataflow:") &&
+      strcontains(output.stream_demo_workflow_contract, "nextPageToken") &&
+      strcontains(output.stream_demo_workflow_contract, "visited_page_tokens") &&
+      strcontains(output.stream_demo_workflow_contract, "discovery_deadline") &&
+      strcontains(output.stream_demo_workflow_contract, "duplicate_match") &&
+      strcontains(output.stream_demo_workflow_contract, "candidate.name == job_name") &&
+      strcontains(output.stream_demo_workflow_contract, "tag:stream_demo")
+    )
+    error_message = "O source_contents implantado deve proteger o launch e recuperar um único job mesmo com paginação, ciclos e resultado ambíguo."
   }
   assert {
     condition     = output.silver_alunos_partition_expiration_ms == 31536000000

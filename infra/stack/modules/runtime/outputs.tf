@@ -1,8 +1,8 @@
 output "job_names" { value = { for key, job in google_cloud_run_v2_job.job : key => job.name } }
 output "workflow_names" { value = { batch = google_workflows_workflow.batch.name, stream_demo = google_workflows_workflow.stream_demo.name } }
 output "stream_demo_source" {
-  description = "Template fonte do Workflow para testes de controle sem execução cloud."
-  value       = file("${path.module}/templates/stream-demo.yaml")
+  description = "source_contents efetivamente entregue ao Workflow do demo."
+  value       = google_workflows_workflow.stream_demo.source_contents
 }
 output "batch_workflow_source" {
   description = "Workflow Batch renderizado para validar overrides sem executar cloud."

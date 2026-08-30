@@ -9,6 +9,10 @@ import yaml
 workflow = yaml.safe_load(sys.stdin.read())
 main_steps = workflow["main"]["steps"]
 top_level = {next(iter(step)) for step in main_steps}
+init = next(step["init"] for step in main_steps if "init" in step)
+init_values = {next(iter(item)): next(iter(item.values())) for item in init["assign"]}
+assert init_values["correlation_id"] == "${uuid.generate()}"
+assert init_values["job_name"] == '${"literacy-demo-" + text.substring(correlation_id, 0, 24)}'
 guarded = next(step["guarded_execution"] for step in main_steps if "guarded_execution" in step)
 guarded_names = {next(iter(step)) for step in guarded["try"]["steps"]}
 assert "launch_flex" not in top_level
@@ -173,6 +177,18 @@ def test_workflow_is_structurally_valid_and_bounded() -> None:
     assert "objects.items[0].updated >= window_start" in content
     assert "projects.locations.operations.get" not in content
     assert "merge_and_test_sql" not in content
+
+
+def test_workflow_when_sources_are_inventoried_has_no_driftable_copy() -> None:
+    # Given: the canonical deployable workflow at the repository boundary.
+    canonical = Path("workflows/stream_demo.yaml")
+
+    # When: the historical module-local template location is inspected.
+    duplicate = Path("infra/stack/modules/runtime/templates/stream-demo.yaml")
+
+    # Then: only the canonical artifact can be consumed or tested.
+    assert canonical.is_file()
+    assert not duplicate.exists()
 
 
 def test_flex_launch_and_ambiguous_result_are_inside_guarded_cleanup() -> None:

@@ -5,8 +5,8 @@ main:
         assign:
           - project_id: ${args.project_id}
           - region: ${args.region}
-          - job_name: ${"literacy-demo-" + string(sys.now())}
-          - correlation_id: ${job_name}
+          - correlation_id: ${uuid.generate()}
+          - job_name: ${"literacy-demo-" + text.substring(correlation_id, 0, 24)}
           - window_start: ${time.format(sys.now())}
           - dataflow_job_id: null
     - guarded_execution:

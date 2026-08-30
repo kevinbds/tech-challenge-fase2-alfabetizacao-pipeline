@@ -32,19 +32,7 @@ locals {
     }
   }
 
-  stream_demo_source = templatefile("${path.module}/templates/stream-demo.yaml", {
-    project_id             = var.project_id
-    region                 = var.region
-    producer_job           = "${var.name_prefix}-producer"
-    dbt_job                = "${var.name_prefix}-dbt"
-    template_gcs_path      = var.dataflow_template_path
-    input_subscription     = var.dataflow_subscription_id
-    temp_location          = "gs://${var.dataflow_bucket}/temp/"
-    staging_location       = "gs://${var.dataflow_bucket}/staging/"
-    dataflow_service_email = var.service_account_emails["dataflow"]
-    archive_bucket         = var.archive_bucket
-    backlog_subscriptions  = jsonencode([for id in var.backlog_subscription_ids : basename(id)])
-  })
+  stream_demo_source = file("${path.root}/../../workflows/stream_demo.yaml")
 }
 
 resource "google_cloud_run_v2_job" "job" {
