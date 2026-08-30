@@ -31,3 +31,12 @@ def test_workflow_is_structurally_valid_and_bounded() -> None:
     assert "raw_archive_branch" in content
     assert "backlog_and_dlq_assert_sql" in content
     assert "additionalExperiments: [enable_portable_runner]" in content
+    assert "additionalUserLabels: {run_id:" in content
+    assert "as: workflow_error" in content
+    assert "as: cleanup_error" in content
+    assert "raise: ${workflow_error}" in content
+    assert "queryParameters:" in content
+    assert "correlation_id" in content
+    assert "window_start" in content
+    assert "objects.items[0].updated >= window_start" in content
+    assert "projects.locations.operations.get" not in content
