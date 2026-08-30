@@ -1,0 +1,26 @@
+[
+  {
+    "run_id":"old","source":"uf","year":2024,"status":"completed",
+    "source_identity":{"location":"US","etag":"old"},"row_count":1,
+    "fingerprint":"old","query_hash":"query","schema_hash":"schema",
+    "bronze_objects":[],"started_at":"2025-01-01T00:00:00Z",
+    "completed_at":"2025-01-01T00:01:00Z","git_sha":"abc",
+    "image_digest":"sha256:abc"
+  },
+  {
+    "run_id":"failed","source":"uf","year":2024,"status":"failed",
+    "source_identity":{"location":"US","etag":"failed"},"row_count":1,
+    "fingerprint":"failed","query_hash":"query","schema_hash":"schema",
+    "bronze_objects":[],"started_at":"2025-02-01T00:00:00Z",
+    "completed_at":"2025-02-01T00:01:00Z","git_sha":"def",
+    "image_digest":"sha256:def"
+  },
+  {
+    "run_id":"new","source":"uf","year":2024,"status":"completed",
+    "source_identity":{"location":"US","etag":"new"},"row_count":1,
+    "fingerprint":"new","query_hash":"query","schema_hash":"schema",
+    "bronze_objects":[],"started_at":"2025-03-01T00:00:00Z",
+    "completed_at":"2025-03-01T00:01:00Z","git_sha":"ghi",
+    "image_digest":"sha256:ghi"
+  }
+]
