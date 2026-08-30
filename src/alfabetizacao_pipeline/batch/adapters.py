@@ -47,7 +47,7 @@ class BigQueryAdapterConfig:
 
 
 class BigQuerySdkBoundary(Protocol):
-    """Narrow typed boundary implemented with google-cloud-bigquery."""
+    """Narrow typed boundary for google-cloud-bigquery implementations."""
 
     def inspect(self, locator: SourceLocator) -> SourceInspection:
         """Read dataset location, table provenance and INFORMATION_SCHEMA columns."""
@@ -67,7 +67,7 @@ class BigQuerySdkBoundary(Protocol):
 
 
 class GcsSdkBoundary(Protocol):
-    """Narrow typed boundary implemented with google-cloud-storage."""
+    """Narrow typed boundary for google-cloud-storage implementations."""
 
     def download(self, uri: str) -> bytes:
         """Download one exact object generation."""
