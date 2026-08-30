@@ -13,7 +13,12 @@ from alfabetizacao_pipeline.batch.fakes import (
     InMemoryManifestStore,
     InMemoryObjectStore,
 )
-from alfabetizacao_pipeline.batch.models import BatchRequest, BatchRunContext, DryRunEstimate
+from alfabetizacao_pipeline.batch.models import (
+    BatchRequest,
+    BatchRunContext,
+    DeploymentProvenance,
+    DryRunEstimate,
+)
 from alfabetizacao_pipeline.batch.planner import plan_batch
 from alfabetizacao_pipeline.batch.production import build_production_composition
 from alfabetizacao_pipeline.batch.runner import execute_batch
@@ -45,6 +50,19 @@ def _request(source: str, year: int, maximum_bytes_billed: int, dry_run: bool) -
         )
     except ValidationError as error:
         typer.echo('{"status":"invalid_request"}', err=True)
+        raise typer.Exit(code=ExitCode.INVALID_CONFIGURATION) from error
+
+
+def _deployment_provenance() -> DeploymentProvenance:
+    try:
+        return DeploymentProvenance.model_validate(
+            {
+                "git_sha": os.environ.get("ALFABETIZACAO_GIT_SHA"),
+                "image_digest": os.environ.get("ALFABETIZACAO_IMAGE_DIGEST"),
+            }
+        )
+    except ValidationError as error:
+        typer.echo('{"status":"invalid_deployment_provenance"}', err=True)
         raise typer.Exit(code=ExitCode.INVALID_CONFIGURATION) from error
 
 
@@ -80,6 +98,7 @@ def plan(
         int | None,
         typer.Option("--demo-estimated-bytes"),
     ] = None,
+    _output_format: Annotated[OutputFormat, typer.Option("--format")] = OutputFormat.JSON,
 ) -> None:
     """Return a bounded dry-run plan and stable JSON exit contract."""
     request = _request(source, year, maximum_bytes_billed, dry_run)
@@ -122,16 +141,12 @@ def run(
     """Run production adapters; local fixtures require explicit demo mode."""
     request = _request(source, year, 25 * 1024**3, dry_run)
     if not demo:
-        git_sha = os.environ.get("ALFABETIZACAO_GIT_SHA")
-        image_digest = os.environ.get("ALFABETIZACAO_IMAGE_DIGEST")
-        if git_sha is None or image_digest is None:
-            typer.echo('{"status":"deployment_provenance_required"}', err=True)
-            raise typer.Exit(code=ExitCode.INVALID_CONFIGURATION)
+        provenance = _deployment_provenance()
         composition = build_production_composition(
             source,
             AppSettings(),
-            git_sha=git_sha,
-            image_digest=image_digest,
+            git_sha=provenance.git_sha,
+            image_digest=provenance.image_digest,
         )
         if dry_run:
             plan_result = plan_batch(

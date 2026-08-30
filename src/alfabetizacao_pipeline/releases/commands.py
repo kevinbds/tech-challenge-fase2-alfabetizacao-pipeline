@@ -5,6 +5,7 @@ from typing import Annotated
 import typer
 from pydantic import TypeAdapter, ValidationError
 
+from alfabetizacao_pipeline.batch.errors import IncompleteRunError
 from alfabetizacao_pipeline.batch.models import BatchManifest
 from alfabetizacao_pipeline.releases.selector import select_latest_completed
 from alfabetizacao_pipeline.releases.sql import promotion_sql, rollback_sql
@@ -23,6 +24,8 @@ def _required_identifier(value: str | None) -> str:
 def select(
     manifests: Annotated[Path, typer.Option("--manifests")],
     release_id: Annotated[str, typer.Option("--release-id")],
+    year: Annotated[int, typer.Option("--year")],
+    expected_sources: Annotated[list[str], typer.Option("--expected-source")],
 ) -> None:
     """Select latest completed manifests from a typed local JSON fixture."""
     try:
@@ -30,7 +33,17 @@ def select(
     except (OSError, ValidationError) as error:
         typer.echo('{"status":"invalid_manifests"}', err=True)
         raise typer.Exit(code=2) from error
-    release = select_latest_completed(parsed, release_id, datetime.now(tz=UTC))
+    expected_keys = frozenset((source, year) for source in expected_sources)
+    try:
+        release = select_latest_completed(
+            parsed,
+            release_id,
+            datetime.now(tz=UTC),
+            expected_keys=expected_keys,
+        )
+    except IncompleteRunError as error:
+        typer.echo('{"status":"incomplete_release"}', err=True)
+        raise typer.Exit(code=2) from error
     typer.echo(release.model_dump_json())
 
 

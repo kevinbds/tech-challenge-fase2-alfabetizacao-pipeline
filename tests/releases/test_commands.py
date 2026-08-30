@@ -3,6 +3,7 @@ from pathlib import Path
 from pydantic import TypeAdapter
 from typer.testing import CliRunner
 
+from alfabetizacao_pipeline.batch.catalog import SOURCE_CATALOG
 from alfabetizacao_pipeline.batch.fakes import ManifestFixtureSpec, manifest_fixture
 from alfabetizacao_pipeline.batch.models import BatchManifest, BatchStatus
 from alfabetizacao_pipeline.releases.commands import app
@@ -10,25 +11,77 @@ from alfabetizacao_pipeline.releases.models import Release
 
 
 def test_release_select_command_uses_typed_manifest_fixture(tmp_path: Path) -> None:
-    # Given: one completed and one failed immutable manifest
-    manifests = (
-        manifest_fixture(ManifestFixtureSpec("ok", "uf", 2024, BatchStatus.COMPLETED, None)),
-        manifest_fixture(ManifestFixtureSpec("failed", "uf", 2024, BatchStatus.FAILED, None)),
+    # Given: one completed immutable manifest for every expected source
+    manifests = tuple(
+        manifest_fixture(
+            ManifestFixtureSpec(
+                f"{source}-2024",
+                source,
+                2024,
+                BatchStatus.COMPLETED,
+                None,
+            )
+        )
+        for source in SOURCE_CATALOG
     )
-    completed = manifests[0].model_copy(update={"completed_at": manifests[0].started_at})
+    completed = tuple(
+        manifest.model_copy(update={"completed_at": manifest.started_at}) for manifest in manifests
+    )
     fixture = tmp_path / "manifests.json"
-    _ = fixture.write_bytes(
-        TypeAdapter(tuple[BatchManifest, ...]).dump_json((completed, manifests[1]))
-    )
+    _ = fixture.write_bytes(TypeAdapter(tuple[BatchManifest, ...]).dump_json(completed))
     # When: release selection is invoked through Typer
+    expected_source_options = [
+        option for source in SOURCE_CATALOG for option in ("--expected-source", source)
+    ]
     result = CliRunner().invoke(
         app,
-        ["select", "--manifests", str(fixture), "--release-id", "release-1"],
+        [
+            "select",
+            "--manifests",
+            str(fixture),
+            "--release-id",
+            "release-1",
+            "--year",
+            "2024",
+            *expected_source_options,
+        ],
     )
     release = Release.model_validate_json(result.stdout)
-    # Then: only the completed run is mapped
+    # Then: exactly the six expected partitions are mapped
     assert result.exit_code == 0
-    assert tuple(partition.run_id for partition in release.partitions) == ("ok",)
+    assert frozenset(partition.source for partition in release.partitions) == frozenset(
+        SOURCE_CATALOG
+    )
+
+
+def test_release_select_command_reports_incomplete_release(tmp_path: Path) -> None:
+    # Given: a fixture containing only one of the six required sources
+    manifest = manifest_fixture(
+        ManifestFixtureSpec("uf-2024", "uf", 2024, BatchStatus.COMPLETED, None)
+    )
+    completed = manifest.model_copy(update={"completed_at": manifest.started_at})
+    fixture = tmp_path / "manifests.json"
+    _ = fixture.write_bytes(TypeAdapter(tuple[BatchManifest, ...]).dump_json((completed,)))
+    expected_source_options = [
+        option for source in SOURCE_CATALOG for option in ("--expected-source", source)
+    ]
+    # When: the incomplete fixture crosses the real CLI boundary
+    result = CliRunner().invoke(
+        app,
+        [
+            "select",
+            "--manifests",
+            str(fixture),
+            "--release-id",
+            "release-incomplete",
+            "--year",
+            "2024",
+            *expected_source_options,
+        ],
+    )
+    # Then: selection fails closed with its machine-readable status
+    assert result.exit_code == 2
+    assert '{"status":"incomplete_release"}' in result.stderr
 
 
 def test_release_mutation_commands_are_dry_run_only_without_cloud_authorization() -> None:

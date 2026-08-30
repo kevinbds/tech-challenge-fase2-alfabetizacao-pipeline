@@ -2,7 +2,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from alfabetizacao_pipeline.batch.adapters import ImmutableUpload, QueryExecution
+from alfabetizacao_pipeline.batch.adapters import (
+    GcsObjectVersion,
+    ImmutableDownload,
+    ImmutableUpload,
+    QueryExecution,
+)
 from alfabetizacao_pipeline.batch.errors import ImmutableObjectExistsError, ManifestConflictError
 from alfabetizacao_pipeline.batch.fakes import ManifestFixtureSpec, manifest_fixture
 from alfabetizacao_pipeline.batch.google_adapters import RetryEvent, retry_call
@@ -33,8 +38,11 @@ class MemoryManifestSdk:
         self.objects: dict[str, bytes] = {}
         self.upload_attempts: int = 0
 
-    def download(self, uri: str) -> bytes:
-        return self.objects[uri]
+    def stat(self, uri: str) -> GcsObjectVersion:
+        return GcsObjectVersion(uri, 1, 1)
+
+    def download(self, request: ImmutableDownload) -> bytes:
+        return self.objects[request.version.uri]
 
     def upload(self, request: ImmutableUpload) -> BronzeObject:
         self.upload_attempts += 1
@@ -48,8 +56,10 @@ class MemoryManifestSdk:
             size_bytes=len(request.payload),
         )
 
-    def list(self, prefix: str) -> tuple[str, ...]:
-        return tuple(uri for uri in sorted(self.objects) if uri.startswith(prefix))
+    def list(self, prefix: str) -> tuple[GcsObjectVersion, ...]:
+        return tuple(
+            GcsObjectVersion(uri, 1, 1) for uri in sorted(self.objects) if uri.startswith(prefix)
+        )
 
 
 def test_retryable_cloud_operation_has_bounded_observable_attempts() -> None:

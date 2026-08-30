@@ -112,3 +112,14 @@ class ManifestConflictError(Exception):
     def __str__(self) -> str:
         """Render the immutable checkpoint conflict."""
         return f"checkpoint concorrente diverge do conteúdo persistido: {self.uri}"
+
+
+@dataclass(frozen=True, slots=True)
+class StaleObjectGenerationError(Exception):
+    """An object changed after its immutable version was selected."""
+
+    uri: str
+
+    @override
+    def __str__(self) -> str:
+        return f"geração do objeto mudou durante a leitura: {self.uri}"

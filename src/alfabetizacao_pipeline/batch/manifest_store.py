@@ -1,8 +1,13 @@
 from datetime import UTC, datetime
+from hashlib import sha256
 
 from pydantic import ValidationError
 
-from alfabetizacao_pipeline.batch.adapters import GcsSdkBoundary, ImmutableUpload
+from alfabetizacao_pipeline.batch.adapters import (
+    GcsSdkBoundary,
+    ImmutableDownload,
+    ImmutableUpload,
+)
 from alfabetizacao_pipeline.batch.errors import (
     ImmutableObjectExistsError,
     ManifestConflictError,
@@ -22,11 +27,13 @@ class GcsManifestStore:
         """Resolve the newest valid completed checkpoint from persistent history."""
         prefix = f"{self._prefix}/{source}/ano={year}/"
         candidates: list[BatchManifest] = []
-        for uri in self._sdk.list(prefix):
-            if not uri.endswith("/checkpoint=completed/manifest.json"):
+        for version in self._sdk.list(prefix):
+            if not version.uri.endswith("/checkpoint=completed/manifest.json"):
                 continue
             try:
-                manifest = BatchManifest.model_validate_json(self._sdk.download(uri))
+                manifest = BatchManifest.model_validate_json(
+                    self._sdk.download(ImmutableDownload(version))
+                )
             except ValidationError:
                 continue
             if (
@@ -49,7 +56,9 @@ class GcsManifestStore:
         try:
             _ = self._sdk.upload(ImmutableUpload(uri=uri, payload=payload))
         except ImmutableObjectExistsError as error:
-            if self._sdk.download(uri) != payload:
+            version = self._sdk.stat(uri)
+            observed = self._sdk.download(ImmutableDownload(version))
+            if sha256(observed).digest() != sha256(payload).digest():
                 raise ManifestConflictError(uri=uri) from error
 
     def _checkpoint_uri(self, manifest: BatchManifest) -> str:

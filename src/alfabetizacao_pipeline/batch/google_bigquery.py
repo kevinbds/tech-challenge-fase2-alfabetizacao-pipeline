@@ -196,7 +196,10 @@ class GoogleBigQuerySdk(BigQuerySdkBoundary):
             "bigquery.export",
             lambda: self._client.execute(execution, dry_run=False),
         )
-        return self._landing.list(execution.destination_uri.split("*", maxsplit=1)[0])
+        return tuple(
+            version.uri
+            for version in self._landing.list(execution.destination_uri.split("*", maxsplit=1)[0])
+        )
 
     def _call[ResultT](self, operation: str, action: Callable[[], ResultT]) -> ResultT:
         return retry_call(

@@ -41,6 +41,22 @@ class ImmutableUpload:
 
 
 @dataclass(frozen=True, slots=True)
+class GcsObjectVersion:
+    """Exact immutable GCS object version selected from metadata."""
+
+    uri: str
+    generation: int
+    metageneration: int
+
+
+@dataclass(frozen=True, slots=True)
+class ImmutableDownload:
+    """Read request pinned to one generation and metageneration."""
+
+    version: GcsObjectVersion
+
+
+@dataclass(frozen=True, slots=True)
 class BigQueryAdapterConfig:
     """Pinned hashes and locator bound to one adapter instance."""
 
@@ -72,7 +88,11 @@ class BigQuerySdkBoundary(Protocol):
 class GcsSdkBoundary(Protocol):
     """Narrow typed boundary for google-cloud-storage implementations."""
 
-    def download(self, uri: str) -> bytes:
+    def stat(self, uri: str) -> GcsObjectVersion:
+        """Resolve the generation and metageneration for one object URI."""
+        ...
+
+    def download(self, request: ImmutableDownload) -> bytes:
         """Download one exact object generation."""
         ...
 
@@ -80,7 +100,7 @@ class GcsSdkBoundary(Protocol):
         """Upload and return generation, CRC32C and size metadata."""
         ...
 
-    def list(self, prefix: str) -> tuple[str, ...]:
+    def list(self, prefix: str) -> tuple[GcsObjectVersion, ...]:
         """List exact object URIs below a stable control prefix."""
         ...
 
@@ -162,7 +182,7 @@ class GcsObjectStore:
 
     def read(self, uri: str) -> bytes:
         """Download one landing object."""
-        return self.sdk.download(uri)
+        return self.sdk.download(ImmutableDownload(self.sdk.stat(uri)))
 
     def write_immutable(self, uri: str, payload: bytes) -> BronzeObject:
         """Upload a Bronze object with an unchangeable zero precondition."""

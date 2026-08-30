@@ -3,38 +3,61 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from alfabetizacao_pipeline.batch.catalog import SOURCE_CATALOG
 from alfabetizacao_pipeline.batch.errors import IncompleteRunError
 from alfabetizacao_pipeline.batch.fakes import ManifestFixtureSpec, manifest_fixture
-from alfabetizacao_pipeline.batch.models import BatchStatus
+from alfabetizacao_pipeline.batch.models import BatchManifest, BatchStatus
 from alfabetizacao_pipeline.releases.models import ActiveRelease
 from alfabetizacao_pipeline.releases.selector import select_latest_completed
 from alfabetizacao_pipeline.releases.sql import promotion_sql, rollback_sql
 
 
-def test_latest_completed_excludes_failed_and_incomplete_runs_when_selected() -> None:
-    # Given: completed, failed and incomplete runs for one annual partition
-    manifests = (
-        manifest_fixture(
-            ManifestFixtureSpec(
-                "old", "uf", 2024, BatchStatus.COMPLETED, datetime(2025, 1, 1, tzinfo=UTC)
-            )
-        ),
-        manifest_fixture(
-            ManifestFixtureSpec(
-                "failed", "uf", 2024, BatchStatus.FAILED, datetime(2025, 2, 1, tzinfo=UTC)
-            )
-        ),
-        manifest_fixture(
-            ManifestFixtureSpec(
-                "new", "uf", 2024, BatchStatus.COMPLETED, datetime(2025, 3, 1, tzinfo=UTC)
-            )
-        ),
-        manifest_fixture(ManifestFixtureSpec("partial", "uf", 2024, BatchStatus.INCOMPLETE, None)),
+def _expected_keys(year: int = 2024) -> frozenset[tuple[str, int]]:
+    return frozenset((source, year) for source in SOURCE_CATALOG)
+
+
+def _completed(source: str, year: int = 2024) -> BatchManifest:
+    return manifest_fixture(
+        ManifestFixtureSpec(
+            f"{source}-{year}",
+            source,
+            year,
+            BatchStatus.COMPLETED,
+            datetime(2025, 1, 1, tzinfo=UTC),
+        )
     )
-    # When: a release mapping is selected
-    release = select_latest_completed(manifests, "release-1", datetime(2025, 4, 1, tzinfo=UTC))
-    # Then: only the newest completed run is used
-    assert release.partitions[0].run_id == "new"
+
+
+def test_release_requires_exactly_one_completed_manifest_per_expected_partition() -> None:
+    # Given: one completed manifest for each challenge source in the release year
+    manifests = tuple(_completed(source) for source in SOURCE_CATALOG)
+    # When: the explicit partition set is selected
+    release = select_latest_completed(
+        manifests,
+        "release-1",
+        datetime(2025, 4, 1, tzinfo=UTC),
+        expected_keys=_expected_keys(),
+    )
+    # Then: all and only the expected partitions are mapped
+    assert frozenset((partition.source, partition.year) for partition in release.partitions) == (
+        _expected_keys()
+    )
+
+
+def test_release_rejects_catalog_sources_distributed_across_different_years() -> None:
+    # Given: the six catalog sources are expected, but split across two years
+    expected_keys = frozenset(
+        (source, 2024 if index % 2 == 0 else 2023) for index, source in enumerate(SOURCE_CATALOG)
+    )
+    manifests = tuple(_completed(source, year) for source, year in expected_keys)
+    # When/Then: each represented year must independently contain every catalog source
+    with pytest.raises(IncompleteRunError):
+        _ = select_latest_completed(
+            manifests,
+            "release-mixed-years",
+            datetime(2025, 4, 1, tzinfo=UTC),
+            expected_keys=expected_keys,
+        )
 
 
 def test_promotion_and_rollback_are_transactional_pointer_updates() -> None:
@@ -57,7 +80,12 @@ def test_empty_completed_history_fails_closed_when_selecting_release() -> None:
     # Given: no completed manifests
     # When/Then: a candidate release cannot be constructed without partitions
     with pytest.raises(IncompleteRunError):
-        _ = select_latest_completed((), "release-empty", datetime(2025, 4, 1, tzinfo=UTC))
+        _ = select_latest_completed(
+            (),
+            "release-empty",
+            datetime(2025, 4, 1, tzinfo=UTC),
+            expected_keys=_expected_keys(),
+        )
 
 
 def test_rollback_asserts_previous_release_is_present_before_pointer_swap() -> None:

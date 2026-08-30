@@ -10,8 +10,16 @@ from google.api_core.exceptions import (
 )
 from google.cloud import storage
 
-from alfabetizacao_pipeline.batch.adapters import GcsSdkBoundary, ImmutableUpload
-from alfabetizacao_pipeline.batch.errors import ImmutableObjectExistsError
+from alfabetizacao_pipeline.batch.adapters import (
+    GcsObjectVersion,
+    GcsSdkBoundary,
+    ImmutableDownload,
+    ImmutableUpload,
+)
+from alfabetizacao_pipeline.batch.errors import (
+    ImmutableObjectExistsError,
+    StaleObjectGenerationError,
+)
 from alfabetizacao_pipeline.batch.google_adapters import RetryObserver, retry_call
 from alfabetizacao_pipeline.batch.models import BronzeObject
 
@@ -27,10 +35,29 @@ class StoredBlob:
     size: int
 
 
+@dataclass(frozen=True, slots=True)
+class StoredVersion:
+    """Storage metadata required for a preconditioned read."""
+
+    name: str
+    generation: int
+    metageneration: int
+
+
 class StorageClientBoundary(Protocol):
     """Narrow testable facade around google-cloud-storage."""
 
-    def download(self, bucket: str, name: str) -> bytes:
+    def stat(self, bucket: str, name: str) -> StoredVersion:
+        """Read the current immutable version metadata."""
+        ...
+
+    def download(
+        self,
+        bucket: str,
+        name: str,
+        generation: int,
+        metageneration: int,
+    ) -> bytes:
         """Read one named object."""
         ...
 
@@ -38,7 +65,7 @@ class StorageClientBoundary(Protocol):
         """Create one object with generation-match zero."""
         ...
 
-    def list_names(self, bucket: str, prefix: str) -> tuple[str, ...]:
+    def list_versions(self, bucket: str, prefix: str) -> tuple[StoredVersion, ...]:
         """List stable object names in lexical order."""
         ...
 
@@ -50,9 +77,29 @@ class NativeStorageClient:
         """Create an authenticated destination-project client."""
         self._client: storage.Client = storage.Client(project=project)
 
-    def download(self, bucket: str, name: str) -> bytes:
+    def stat(self, bucket: str, name: str) -> StoredVersion:
+        """Reload current metadata before selecting an immutable version."""
+        blob = self._client.bucket(bucket).blob(name)
+        blob.reload()
+        return _stored_version(bucket, blob)
+
+    def download(
+        self,
+        bucket: str,
+        name: str,
+        generation: int,
+        metageneration: int,
+    ) -> bytes:
         """Download bytes with the SDK checksum verification enabled."""
-        return self._client.bucket(bucket).blob(name).download_as_bytes(checksum="crc32c")
+        return (
+            self._client.bucket(bucket)
+            .blob(name, generation=generation)
+            .download_as_bytes(
+                checksum="crc32c",
+                if_generation_match=generation,
+                if_metageneration_match=metageneration,
+            )
+        )
 
     def upload_immutable(self, bucket: str, name: str, payload: bytes) -> StoredBlob:
         """Upload with a zero-generation precondition and CRC32C verification."""
@@ -73,9 +120,17 @@ class NativeStorageClient:
             size=int(blob.size),
         )
 
-    def list_names(self, bucket: str, prefix: str) -> tuple[str, ...]:
+    def list_versions(self, bucket: str, prefix: str) -> tuple[StoredVersion, ...]:
         """List object names without relying on a fixed location."""
-        return tuple(sorted(blob.name for blob in self._client.list_blobs(bucket, prefix=prefix)))
+        return tuple(
+            sorted(
+                (
+                    _stored_version(bucket, blob)
+                    for blob in self._client.list_blobs(bucket, prefix=prefix)
+                ),
+                key=lambda version: version.name,
+            )
+        )
 
 
 class GoogleGcsSdk(GcsSdkBoundary):
@@ -95,16 +150,37 @@ class GoogleGcsSdk(GcsSdkBoundary):
         self._maximum_attempts: int = maximum_attempts
 
     @override
-    def download(self, uri: str) -> bytes:
-        """Download one object using bounded retries."""
+    def stat(self, uri: str) -> GcsObjectVersion:
+        """Resolve exact generation metadata using bounded retries."""
         bucket, name = _split_gs_uri(uri)
-        return retry_call(
-            "gcs.download",
-            lambda: self._client.download(bucket, name),
+        version = retry_call(
+            "gcs.stat",
+            lambda: self._client.stat(bucket, name),
             retryable=RETRYABLE_STORAGE_ERRORS,
             maximum_attempts=self._maximum_attempts,
             observer=self._observer,
         )
+        return GcsObjectVersion(uri, version.generation, version.metageneration)
+
+    @override
+    def download(self, request: ImmutableDownload) -> bytes:
+        """Download one object using bounded retries."""
+        bucket, name = _split_gs_uri(request.version.uri)
+        try:
+            return retry_call(
+                "gcs.download",
+                lambda: self._client.download(
+                    bucket,
+                    name,
+                    request.version.generation,
+                    request.version.metageneration,
+                ),
+                retryable=RETRYABLE_STORAGE_ERRORS,
+                maximum_attempts=self._maximum_attempts,
+                observer=self._observer,
+            )
+        except PreconditionFailed as error:
+            raise StaleObjectGenerationError(uri=request.version.uri) from error
 
     @override
     def upload(self, request: ImmutableUpload) -> BronzeObject:
@@ -128,17 +204,31 @@ class GoogleGcsSdk(GcsSdkBoundary):
         )
 
     @override
-    def list(self, prefix: str) -> tuple[str, ...]:
+    def list(self, prefix: str) -> tuple[GcsObjectVersion, ...]:
         """List exact gs:// URIs under a prefix using bounded retries."""
         bucket, name_prefix = _split_gs_uri(prefix)
-        names = retry_call(
+        versions = retry_call(
             "gcs.list",
-            lambda: self._client.list_names(bucket, name_prefix),
+            lambda: self._client.list_versions(bucket, name_prefix),
             retryable=RETRYABLE_STORAGE_ERRORS,
             maximum_attempts=self._maximum_attempts,
             observer=self._observer,
         )
-        return tuple(f"gs://{bucket}/{name}" for name in names)
+        return tuple(
+            GcsObjectVersion(
+                f"gs://{bucket}/{version.name}",
+                version.generation,
+                version.metageneration,
+            )
+            for version in versions
+        )
+
+
+def _stored_version(bucket: str, blob: storage.Blob) -> StoredVersion:
+    if blob.generation is None or blob.metageneration is None:
+        message = f"missing-object-version:{bucket}/{blob.name}"
+        raise ValueError(message)
+    return StoredVersion(blob.name, int(blob.generation), int(blob.metageneration))
 
 
 def _split_gs_uri(uri: str) -> tuple[str, str]:

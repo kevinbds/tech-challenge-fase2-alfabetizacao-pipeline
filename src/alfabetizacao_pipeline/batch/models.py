@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum, unique
 from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic_core import PydanticCustomError
 
 
@@ -131,8 +131,8 @@ class BatchManifest(BaseModel):
     bronze_objects: tuple[BronzeObject, ...]
     started_at: datetime
     completed_at: datetime | None
-    git_sha: str
-    image_digest: str
+    git_sha: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    image_digest: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
     @model_validator(mode="after")
     def reject_pii(self) -> "BatchManifest":
@@ -184,8 +184,17 @@ class BatchRunContext(BaseModel):
 
     landing_prefix: str = Field(pattern=r"^gs://")
     bronze_prefix: str = Field(pattern=r"^gs://")
-    git_sha: str
-    image_digest: str
+    git_sha: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    image_digest: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class DeploymentProvenance(BaseModel):
+    """Validated non-empty deployment identity loaded before SDK composition."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    git_sha: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    image_digest: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class SchemaDriftReport(BaseModel):

@@ -5,6 +5,8 @@ from typer.testing import CliRunner
 from alfabetizacao_pipeline.batch import commands
 from alfabetizacao_pipeline.batch.adapters import (
     BigQueryAdapter,
+    GcsObjectVersion,
+    ImmutableDownload,
     ImmutableUpload,
     QueryExecution,
     SourceLocator,
@@ -12,7 +14,11 @@ from alfabetizacao_pipeline.batch.adapters import (
 from alfabetizacao_pipeline.batch.catalog import SOURCE_CATALOG
 from alfabetizacao_pipeline.batch.google_adapters import RetryEvent
 from alfabetizacao_pipeline.batch.google_bigquery import GoogleBigQuerySdk, QueryOutcome
-from alfabetizacao_pipeline.batch.google_storage import GoogleGcsSdk, StoredBlob
+from alfabetizacao_pipeline.batch.google_storage import (
+    GoogleGcsSdk,
+    StoredBlob,
+    StoredVersion,
+)
 from alfabetizacao_pipeline.batch.manifest_store import GcsManifestStore
 from alfabetizacao_pipeline.batch.models import (
     BigQueryType,
@@ -40,7 +46,18 @@ class FlakyStorageClient:
     def __init__(self) -> None:
         self.upload_calls: int = 0
 
-    def download(self, bucket: str, name: str) -> bytes:
+    def stat(self, bucket: str, name: str) -> StoredVersion:
+        del bucket
+        return StoredVersion(name, 7, 2)
+
+    def download(
+        self,
+        bucket: str,
+        name: str,
+        generation: int,
+        metageneration: int,
+    ) -> bytes:
+        del generation, metageneration
         return f"{bucket}/{name}".encode()
 
     def upload_immutable(self, bucket: str, name: str, payload: bytes) -> StoredBlob:
@@ -51,9 +68,9 @@ class FlakyStorageClient:
             raise ServiceUnavailable(message)
         return StoredBlob(generation=7, crc32c="4waSgw==", size=len(payload))
 
-    def list_names(self, bucket: str, prefix: str) -> tuple[str, ...]:
+    def list_versions(self, bucket: str, prefix: str) -> tuple[StoredVersion, ...]:
         del bucket
-        return (prefix + "part-00000.parquet",)
+        return (StoredVersion(prefix + "part-00000.parquet", 7, 2),)
 
 
 class RecordingBigQueryClient:
@@ -127,7 +144,7 @@ def test_google_adapters_fail_closed_on_missing_export_uri_and_invalid_gs_uri() 
     with pytest.raises(ValueError, match="destination-uri-required"):
         _ = query.export(_execution())
     with pytest.raises(ValueError, match="https://bucket/object"):
-        _ = storage.download("https://bucket/object")
+        _ = storage.download(ImmutableDownload(GcsObjectVersion("https://bucket/object", 7, 2)))
 
 
 def test_production_composition_injects_cloud_ports_without_fixture_fallbacks() -> None:

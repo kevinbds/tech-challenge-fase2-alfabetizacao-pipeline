@@ -4,6 +4,8 @@ from alfabetizacao_pipeline.batch.adapters import (
     BigQueryAdapter,
     BigQueryAdapterConfig,
     GcsObjectStore,
+    GcsObjectVersion,
+    ImmutableDownload,
     ImmutableUpload,
     QueryExecution,
     SourceLocator,
@@ -49,15 +51,18 @@ class RecordingGcsSdk:
     def __init__(self) -> None:
         self.upload_request: ImmutableUpload | None = None
 
-    def download(self, uri: str) -> bytes:
-        return uri.encode()
+    def stat(self, uri: str) -> GcsObjectVersion:
+        return GcsObjectVersion(uri, 1, 1)
+
+    def download(self, request: ImmutableDownload) -> bytes:
+        return request.version.uri.encode()
 
     def upload(self, request: ImmutableUpload) -> BronzeObject:
         self.upload_request = request
         return BronzeObject(uri=request.uri, generation=1, crc32c="AAAAAA==", size_bytes=1)
 
-    def list(self, prefix: str) -> tuple[str, ...]:
-        return (prefix + "part.parquet",)
+    def list(self, prefix: str) -> tuple[GcsObjectVersion, ...]:
+        return (GcsObjectVersion(prefix + "part.parquet", 1, 1),)
 
 
 def test_bigquery_adapter_uses_runtime_location_when_querying() -> None:
