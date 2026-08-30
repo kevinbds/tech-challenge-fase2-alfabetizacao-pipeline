@@ -70,9 +70,10 @@ e schema coincidem. Correções de anos antigos criam outro snapshot; Bronze nun
 ### Streaming simulado
 
 O tópico Pub/Sub recebe eventos Avro `MunicipalLiteracyRateUpdatedV1`. Dataflow
-deduplica por `event_id`, manda eventos semanticamente inválidos à quarentena e
-grava auditoria. A Gold `indicador_atual_hibrido` mostra a simulação somente se
-`event_time` for posterior a `promoted_at`; ela nunca substitui histórico
+valida e separa staging válido de quarentena; depois do drain, os modelos dbt
+escolhem uma linha por `event_id`, registram a cópia descartada na auditoria e
+atualizam o overlay. A Gold `indicador_atual_hibrido` mostra a simulação somente
+se `event_time` for posterior a `promoted_at`; ela nunca substitui histórico
 oficial do Batch.
 
 Na demonstração são aceitas 10 mensagens: oito IDs válidos distintos, uma

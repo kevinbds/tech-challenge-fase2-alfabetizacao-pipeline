@@ -51,10 +51,11 @@ por `referenceFileSchemaUri`; Parquet não recebe schema JSON direto nesse caso.
 ## Streaming e ordem
 
 O evento é validado pelo schema Avro no tópico e, depois, pelas regras de
-negócio no pipeline. Pub/Sub entrega ao menos uma vez; por isso a auditoria
-guarda mensagens físicas e a deduplicação de negócio escolhe a primeira linha
-por `event_id` ordenando `event_time,publish_time,ingestion_time`. Para o
-overlay, o desempate é `event_time,publish_time,event_id`.
+negócio no pipeline. Beam preserva as nove linhas válidas no staging e envia a
+inválida à quarentena. Como Pub/Sub entrega ao menos uma vez, após o drain o dbt
+registra a cópia física na auditoria e escolhe uma linha por `event_id` ordenando
+`event_time,publish_time,ingestion_time`. O overlay consome somente essa relação
+deduplicada; seu desempate final é `event_time,publish_time,event_id`.
 
 A assinatura para arquivo GCS grava Avro com metadados, usa o schema do tópico e
 rotação de 60 segundos. A assinatura Dataflow é separada. A mensagem inválida
@@ -85,4 +86,3 @@ O sistema publica sucesso/falha de release, idade do último sucesso, volume por
 partição, linhas em quarentena, duplicatas, backlog, DLQ, estado Dataflow,
 bytes estimados/efetivos e custo projetado. Alertas acionam investigação; não
 promovem nem apagam dados automaticamente. O budget é aviso, não hard cap.
-

@@ -80,9 +80,10 @@ nunca PII.
 6. valide raw Avro independentemente em até 10 minutos;
 7. confirme backlog e DLQs zerados.
 
-O cenário esperado é 10 mensagens aceitas pelo schema, 8 eventos válidos
-distintos no Silver, uma duplicata na auditoria e uma rejeição semântica na
-quarentena. A 11ª mensagem Avro-incompatível deve falhar no publish. Estado
+O cenário esperado é 10 mensagens aceitas pelo schema, nove linhas válidas no
+staging Beam, oito `event_id` na relação deduplicada, uma cópia na auditoria e
+uma rejeição semântica na quarentena. A 11ª mensagem Avro-incompatível deve
+falhar no publish. Estado
 CANCELLED, FAILED ou timeout é falha da demo, não sucesso parcial.
 
 ## Incidentes
