@@ -1,0 +1,148 @@
+main:
+  params: [input]
+  steps:
+    - launch_dataflow:
+        call: http.post
+        args:
+          url: https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/flexTemplates:launch
+          auth:
+            type: OAuth2
+          body:
+            launchParameter:
+              jobName: $${"fiap-stream-demo-" + string(int(sys.now()))}
+              containerSpecGcsPath: ${template_gcs_path}
+              parameters:
+                input_subscription: ${input_subscription}
+                output_table: ${project_id}:silver.municipal_rate_stream
+              environment:
+                tempLocation: ${temp_location}
+                stagingLocation: ${staging_location}
+                serviceAccountEmail: ${dataflow_service_email}
+                numWorkers: 1
+                maxWorkers: 2
+                additionalExperiments: [enable_portable_runner]
+        result: launched
+    - wait_running_deadline:
+        assign:
+          - running_deadline: $${sys.now() + 900}
+          - job_id: $${launched.body.job.id}
+    - poll_running:
+        call: http.get
+        args:
+          url: $${"https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/jobs/" + job_id}
+          auth:
+            type: OAuth2
+        result: job
+    - running_state:
+        switch:
+          - condition: $${job.body.currentState == "JOB_STATE_RUNNING"}
+            next: publish_fixture
+          - condition: $${job.body.currentState in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED"] || sys.now() >= running_deadline}
+            raise: "Dataflow não atingiu RUNNING em 15 minutos"
+        next: running_sleep
+    - running_sleep:
+        call: sys.sleep
+        args: { seconds: 15 }
+        next: poll_running
+    - publish_fixture:
+        assign:
+          - stage_deadline: $${sys.now() + 600}
+          - raw_deadline: $${sys.now() + 600}
+        next: execute_fixture
+    - execute_fixture:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: $${"projects/${project_id}/locations/${region}/jobs/${producer_job}"}
+        result: producer_execution
+    - poll_raw_archive:
+        call: http.get
+        args:
+          url: https://storage.googleapis.com/storage/v1/b/${archive_bucket}/o
+          auth: { type: OAuth2 }
+          query:
+            prefix: raw/
+            maxResults: 1
+        result: raw_objects
+    - raw_archive_state:
+        switch:
+          - condition: $${map.get(raw_objects.body, "items") != null && len(raw_objects.body.items) > 0}
+            next: wait_stage_deadline
+          - condition: $${sys.now() >= raw_deadline}
+            raise: "Raw Avro não apareceu em 10 minutos"
+        next: raw_archive_sleep
+    - raw_archive_sleep:
+        call: sys.sleep
+        args: { seconds: 15 }
+        next: poll_raw_archive
+    - wait_stage_deadline:
+        switch:
+          - condition: $${sys.now() >= stage_deadline}
+            next: request_drain
+        next: stage_sleep
+    - stage_sleep:
+        call: sys.sleep
+        args: { seconds: 15 }
+        next: wait_stage_deadline
+    - request_drain:
+        call: http.put
+        args:
+          url: $${"https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/jobs/" + job_id}
+          auth: { type: OAuth2 }
+          body: { requestedState: JOB_STATE_DRAINED }
+    - drain_deadline:
+        assign:
+          - drain_by: $${sys.now() + 1200}
+    - poll_drained:
+        call: http.get
+        args:
+          url: $${"https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/jobs/" + job_id}
+          auth: { type: OAuth2 }
+        result: drained
+    - drained_state:
+        switch:
+          - condition: $${drained.body.currentState == "JOB_STATE_DRAINED"}
+            next: merge_and_test
+          - condition: $${drained.body.currentState in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED"] || sys.now() >= drain_by}
+            raise: "Dataflow não atingiu DRAINED em 20 minutos"
+        next: drained_sleep
+    - drained_sleep:
+        call: sys.sleep
+        args: { seconds: 15 }
+        next: poll_drained
+    - merge_and_test:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: $${"projects/${project_id}/locations/${region}/jobs/${dbt_job}"}
+          body:
+            overrides:
+              containerOverrides:
+                - args: [build, --select, tag:stream_demo]
+        result: validation_execution
+    - check_backlogs:
+        for:
+          value: subscription_id
+          in: ${backlog_subscriptions}
+          steps:
+            - query_backlog_metric:
+                call: http.get
+                args:
+                  url: https://monitoring.googleapis.com/v3/projects/${project_id}/timeSeries
+                  auth: { type: OAuth2 }
+                  query:
+                    filter: $${"metric.type=\"pubsub.googleapis.com/subscription/num_undelivered_messages\" AND resource.label.subscription_id=\"" + subscription_id + "\""}
+                    interval.endTime: $${time.format(sys.now())}
+                    interval.startTime: $${time.format(sys.now() - 300)}
+                    view: FULL
+                result: backlog
+            - backlog_must_be_zero:
+                switch:
+                  - condition: $${map.get(backlog.body, "timeSeries") != null && len(backlog.body.timeSeries) > 0 && int(backlog.body.timeSeries[0].points[0].value.int64Value) > 0}
+                    raise: '$${"Backlog não zerou: " + subscription_id}'
+    - success:
+        return:
+          job_id: $${job_id}
+          producer_execution: $${producer_execution.name}
+          validation_execution: $${validation_execution.name}
+          raw_archive_verified: true
+          backlogs_verified: ${backlog_subscriptions}
+          state: DRAINED
