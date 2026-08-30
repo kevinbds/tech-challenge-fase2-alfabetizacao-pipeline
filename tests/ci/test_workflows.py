@@ -26,6 +26,7 @@ def test_ci_when_workflow_is_parsed() -> None:
     # When: permissions, jobs and action references are inspected structurally.
     permissions = _mapping(workflow["permissions"])
     jobs = _mapping(workflow["jobs"])
+    python_job = _mapping(jobs["python"])
     expected_jobs = {"python", "dbt_sql", "terraform", "contracts_docs", "secret_scan"}
     uses: list[str] = []
     for job_name in expected_jobs:
@@ -42,6 +43,7 @@ def test_ci_when_workflow_is_parsed() -> None:
     assert uses
     assert all("@" in action and len(action.rsplit("@", 1)[1]) == 40 for action in uses)
     assert "pull_request" in _sequence(workflow["on"])
+    assert _mapping(python_job["env"])["ALFABETIZACAO_VERIFY_ENTRYPOINTS"] == "1"
 
 
 def test_deploy_when_workflow_is_parsed() -> None:
