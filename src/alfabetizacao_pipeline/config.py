@@ -1,13 +1,29 @@
 from decimal import Decimal
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from alfabetizacao_pipeline.types import BytesBilled, ProjectId
 
 PositiveBytes = Annotated[int, Field(gt=0)]
 PositiveMoney = Annotated[Decimal, Field(gt=0)]
+GcpProjectIdInput = Annotated[
+    str,
+    StringConstraints(
+        min_length=6,
+        max_length=30,
+        pattern=r"^[a-z][a-z0-9-]*[a-z0-9]$",
+    ),
+]
+GcpRegionInput = Annotated[
+    str,
+    StringConstraints(
+        min_length=5,
+        max_length=63,
+        pattern=r"^[a-z]+(?:-[a-z]+)+[1-9][0-9]*$",
+    ),
+]
 
 
 class AppSettings(BaseSettings):
@@ -21,8 +37,8 @@ class AppSettings(BaseSettings):
         frozen=True,
     )
 
-    gcp_project_id: str = Field(default="local-project", min_length=1)
-    gcp_region: str = Field(default="southamerica-east1", min_length=1)
+    gcp_project_id: GcpProjectIdInput = "local-project"
+    gcp_region: GcpRegionInput = "southamerica-east1"
     bigquery_location: str = Field(default="US", min_length=1)
     source_project_id: str = Field(default="basedosdados", min_length=1)
     source_dataset_id: str = Field(

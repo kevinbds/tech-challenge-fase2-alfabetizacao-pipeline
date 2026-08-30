@@ -3,6 +3,7 @@ import subprocess
 import sys
 from typing import ClassVar
 
+import pytest
 from pydantic import BaseModel, ConfigDict
 
 from alfabetizacao_pipeline.config import ConfigCheck
@@ -69,6 +70,37 @@ def test_exit_two_when_configuration_is_invalid() -> None:
     assert payload.status == "invalid"
     assert payload.error_count == 1
     assert "secret" not in completed.stderr.lower()
+
+
+@pytest.mark.parametrize(
+    ("environment_name", "invalid_value"),
+    [
+        ("ALFABETIZACAO_GCP_PROJECT_ID", "INVALID PROJECT!"),
+        ("ALFABETIZACAO_GCP_REGION", "not a region!"),
+    ],
+)
+def test_exit_two_when_gcp_identifier_is_invalid(
+    environment_name: str,
+    invalid_value: str,
+) -> None:
+    # Given: a copied environment with one malformed GCP identifier.
+    environment = os.environ.copy()
+    environment[environment_name] = invalid_value
+
+    # When: automation validates the configuration boundary.
+    completed = run_cli(["config", "check", "--format", "json"], environment)
+
+    # Then: the CLI emits only the redacted JSON summary and exits with code two.
+    payload = InvalidConfigResult.model_validate_json(completed.stderr)
+    assert completed.returncode == 2
+    assert completed.stdout == ""
+    assert payload.status == "invalid"
+    assert payload.error_count == 1
+    assert invalid_value not in completed.stderr
+    assert all(
+        sensitive not in completed.stderr.lower()
+        for sensitive in ("secret", "token", "password", "credential")
+    )
 
 
 def test_module_entrypoint_when_invoked() -> None:
