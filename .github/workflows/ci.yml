@@ -58,7 +58,7 @@
       "steps": [
         {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "with": {"fetch-depth": 0}},
         {"uses": "astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e", "with": {"version": "0.11.28", "enable-cache": true}},
-        {"run": "go run github.com/zricethezav/gitleaks/v8@v8.28.0 git --no-banner --redact --log-opts=-1"}
+        {"run": "bash scripts/gitleaks-scan.sh git --no-banner --redact --log-opts=-1"}
       ]
     }
   }
