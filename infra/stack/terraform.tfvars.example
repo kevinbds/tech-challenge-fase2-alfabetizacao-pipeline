@@ -1,0 +1,30 @@
+project_id         = "seu-projeto-gcp"
+billing_account_id = "000000-000000-000000"
+data_location      = "PREENCHA_COM_OUTPUT_DO_BOOTSTRAP"
+region             = "southamerica-east1"
+name_prefix        = "fiap-fase2"
+
+artifacts_bucket_name = "seu-projeto-gcp-fiap-fase2-artifacts"
+
+batch_image    = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/batch@sha256:SUBSTITUA"
+dbt_image      = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dbt@sha256:SUBSTITUA"
+producer_image = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/producer@sha256:SUBSTITUA"
+dataflow_image = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dataflow@sha256:SUBSTITUA"
+
+reference_schema_uris = {
+  uf                           = "gs://BUCKET/reference/uf/HASH/schema.parquet"
+  meta_alfabetizacao_brasil    = "gs://BUCKET/reference/meta_alfabetizacao_brasil/HASH/schema.parquet"
+  meta_alfabetizacao_uf        = "gs://BUCKET/reference/meta_alfabetizacao_uf/HASH/schema.parquet"
+  meta_alfabetizacao_municipio = "gs://BUCKET/reference/meta_alfabetizacao_municipio/HASH/schema.parquet"
+  municipio                    = "gs://BUCKET/reference/municipio/HASH/schema.parquet"
+  alunos                       = "gs://BUCKET/reference/alunos/HASH/schema.parquet"
+}
+
+scheduler_enabled = false
+runtime_entrypoints_verified = false # altere somente após o gate de integração dos containers
+batch_command               = []    # fornecido pelo SHA integrado
+batch_args                  = []
+producer_command            = []
+producer_args               = []
+budget_currency   = "BRL"
+# budget_amount omitido usa 50 apenas porque BRL foi escolhido explicitamente.

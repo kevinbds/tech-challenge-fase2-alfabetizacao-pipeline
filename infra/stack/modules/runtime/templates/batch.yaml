@@ -1,0 +1,17 @@
+main:
+  params: [input]
+  steps:
+    - run_batch:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: $${"projects/${project_id}/locations/${region}/jobs/${batch_job}"}
+        result: batch_execution
+    - run_dbt:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: $${"projects/${project_id}/locations/${region}/jobs/${dbt_job}"}
+        result: dbt_execution
+    - finish:
+        return:
+          batch: $${batch_execution.name}
+          dbt: $${dbt_execution.name}

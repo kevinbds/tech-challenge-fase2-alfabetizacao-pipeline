@@ -1,0 +1,235 @@
+main:
+  params: [input]
+  steps:
+    - initialize_demo:
+        assign:
+          - run_started: $${sys.now()}
+          - run_started_text: $${time.format(run_started)}
+          - correlation_id: $${uuid.generate()}
+          - raw_start_offset: '$${"raw/year=" + text.substring(run_started_text, 0, 4) + "/month=" + text.substring(run_started_text, 5, 7) + "/day=" + text.substring(run_started_text, 8, 10) + "/hour=" + text.substring(run_started_text, 11, 13) + "/" + text.substring(run_started_text, 14, 16) + "_"}'
+    - launch_dataflow:
+        call: googleapis.dataflow.v1b3.projects.locations.flexTemplates.launch
+        args:
+          projectId: ${project_id}
+          location: ${region}
+          body:
+            launchParameter:
+              jobName: $${"fiap-stream-demo-" + correlation_id}
+              containerSpecGcsPath: ${template_gcs_path}
+              parameters:
+                input_subscription: ${input_subscription}
+                output_table: ${project_id}:silver.municipal_rate_stream
+              environment:
+                tempLocation: ${temp_location}
+                stagingLocation: ${staging_location}
+                serviceAccountEmail: ${dataflow_service_email}
+                numWorkers: 1
+                maxWorkers: 2
+                additionalExperiments: [enable_portable_runner]
+                additionalUserLabels:
+                  run_id: $${correlation_id}
+        result: launched
+    - remember_job:
+        assign:
+          - job_id: $${launched.job.id}
+    - guarded_demo:
+        try:
+          call: execute_demo
+          args:
+            job_id: $${job_id}
+            correlation_id: $${correlation_id}
+            run_started: $${run_started}
+            run_started_text: $${run_started_text}
+            raw_start_offset: $${raw_start_offset}
+          result: demo_result
+        except:
+          as: execution_error
+          steps:
+            - cancel_dataflow:
+                try:
+                  call: googleapis.dataflow.v1b3.projects.locations.jobs.update
+                  args:
+                    projectId: ${project_id}
+                    location: ${region}
+                    jobId: $${job_id}
+                    body: { requestedState: JOB_STATE_CANCELLED }
+                except:
+                  as: cleanup_error
+                  steps:
+                    - log_cleanup_failure:
+                        call: sys.log
+                        args:
+                          severity: ERROR
+                          text: '$${"Falha ao cancelar Dataflow " + job_id + ": " + json.encode_to_string(cleanup_error)}'
+            - rethrow_execution_error:
+                raise: $${execution_error}
+    - success:
+        return: $${demo_result}
+
+execute_demo:
+  params: [job_id, correlation_id, run_started, run_started_text, raw_start_offset]
+  steps:
+    - set_deadlines:
+        assign:
+          - running_deadline: $${sys.now() + 900}
+    - poll_running:
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.get
+        args:
+          projectId: ${project_id}
+          location: ${region}
+          jobId: $${job_id}
+        result: job
+    - running_state:
+        switch:
+          - condition: $${job.currentState == "JOB_STATE_RUNNING"}
+            next: publish_fixture
+          - condition: $${job.currentState in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED"] || sys.now() >= running_deadline}
+            raise: "Dataflow não atingiu RUNNING em 15 minutos"
+        next: running_sleep
+    - running_sleep:
+        call: sys.sleep
+        args: { seconds: 15 }
+        next: poll_running
+    - publish_fixture:
+        assign:
+          - raw_deadline: $${sys.now() + 600}
+          - stage_deadline: $${sys.now() + 600}
+    - execute_fixture:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: $${"projects/${project_id}/locations/${region}/jobs/${producer_job}"}
+          body:
+            overrides:
+              containerOverrides:
+                - env:
+                    - name: CORRELATION_ID
+                      value: $${correlation_id}
+                    - name: RUN_ID
+                      value: $${correlation_id}
+          connector_params:
+            timeout: 900
+        result: producer_execution
+    - poll_raw_archive:
+        call: http.get
+        args:
+          url: https://storage.googleapis.com/storage/v1/b/${archive_bucket}/o
+          auth: { type: OAuth2 }
+          query:
+            prefix: raw/
+            startOffset: $${raw_start_offset}
+            maxResults: 1
+        result: raw_objects
+    - raw_archive_state:
+        switch:
+          - condition: $${map.get(raw_objects.body, "items") != null && len(raw_objects.body.items) > 0 && time.parse(raw_objects.body.items[0].timeCreated) >= run_started}
+            next: poll_stream_result
+          - condition: $${sys.now() >= raw_deadline}
+            raise: "Raw Avro da execução atual não apareceu em 10 minutos"
+        next: raw_archive_sleep
+    - raw_archive_sleep:
+        call: sys.sleep
+        args: { seconds: 15 }
+        next: poll_raw_archive
+    - poll_stream_result:
+        call: http.post
+        args:
+          url: https://bigquery.googleapis.com/bigquery/v2/projects/${project_id}/queries
+          auth: { type: OAuth2 }
+          body:
+            query: 'SELECT COUNT(DISTINCT event_id) AS valid_count FROM `${project_id}.silver.municipal_rate_stream` WHERE correlation_id = @correlation_id AND ingestion_time >= TIMESTAMP(@run_started)'
+            useLegacySql: false
+            parameterMode: NAMED
+            maximumBytesBilled: "26843545600"
+            timeoutMs: 30000
+            queryParameters:
+              - name: correlation_id
+                parameterType: { type: STRING }
+                parameterValue: { value: "$${correlation_id}" }
+              - name: run_started
+                parameterType: { type: STRING }
+                parameterValue: { value: "$${run_started_text}" }
+        result: stream_result
+    - stream_result_state:
+        switch:
+          - condition: $${map.get(stream_result.body, "rows") != null && len(stream_result.body.rows) > 0 && int(stream_result.body.rows[0].f[0].v) == 8}
+            next: request_drain
+          - condition: $${sys.now() >= stage_deadline}
+            raise: "Oito eventos válidos da correlação atual não chegaram ao Silver em 10 minutos"
+        next: stream_result_sleep
+    - stream_result_sleep:
+        call: sys.sleep
+        args: { seconds: 15 }
+        next: poll_stream_result
+    - request_drain:
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.update
+        args:
+          projectId: ${project_id}
+          location: ${region}
+          jobId: $${job_id}
+          body: { requestedState: JOB_STATE_DRAINED }
+    - drain_deadline:
+        assign:
+          - drain_by: $${sys.now() + 1200}
+    - poll_drained:
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.get
+        args:
+          projectId: ${project_id}
+          location: ${region}
+          jobId: $${job_id}
+        result: drained
+    - drained_state:
+        switch:
+          - condition: $${drained.currentState == "JOB_STATE_DRAINED"}
+            next: merge_and_test
+          - condition: $${drained.currentState in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED"] || sys.now() >= drain_by}
+            raise: "Dataflow não atingiu DRAINED em 20 minutos"
+        next: drained_sleep
+    - drained_sleep:
+        call: sys.sleep
+        args: { seconds: 15 }
+        next: poll_drained
+    - merge_and_test:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: $${"projects/${project_id}/locations/${region}/jobs/${dbt_job}"}
+          body:
+            overrides:
+              containerOverrides:
+                - args: [build, --select, tag:stream_demo]
+                  env:
+                    - name: CORRELATION_ID
+                      value: $${correlation_id}
+                    - name: RUN_STARTED
+                      value: $${run_started_text}
+          connector_params:
+            timeout: 3600
+        result: validation_execution
+    - check_backlogs:
+        for:
+          value: subscription_id
+          in: ${backlog_subscriptions}
+          steps:
+            - query_backlog_metric:
+                call: http.get
+                args:
+                  url: https://monitoring.googleapis.com/v3/projects/${project_id}/timeSeries
+                  auth: { type: OAuth2 }
+                  query:
+                    filter: $${"metric.type=\"pubsub.googleapis.com/subscription/num_undelivered_messages\" AND resource.label.subscription_id=\"" + subscription_id + "\""}
+                    interval.endTime: $${time.format(sys.now())}
+                    interval.startTime: $${time.format(sys.now() - 300)}
+                    view: FULL
+                result: backlog
+            - backlog_must_be_zero:
+                switch:
+                  - condition: $${map.get(backlog.body, "timeSeries") != null && len(backlog.body.timeSeries) > 0 && int(backlog.body.timeSeries[0].points[0].value.int64Value) > 0}
+                    raise: '$${"Backlog não zerou: " + subscription_id}'
+    - complete:
+        return:
+          job_id: $${job_id}
+          producer_execution: $${producer_execution.name}
+          validation_execution: $${validation_execution.name}
+          correlation_id: $${correlation_id}
+          raw_archive_verified: true
+          backlogs_verified: ${backlog_subscriptions}
+          state: DRAINED
