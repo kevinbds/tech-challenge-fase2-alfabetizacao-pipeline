@@ -1,0 +1,49 @@
+flowchart TB
+  subgraph trust0["Fronteira externa: fontes e publicação"]
+    bd["Base dos Dados<br/>BigQuery público"]
+    producer["Produtor de simulação<br/>service account dedicada"]
+  end
+
+  subgraph trust1["Projeto GCP: dados restritos"]
+    workflow["Workflows<br/>workflow-sa"]
+    batch["Cloud Run Job Batch<br/>batch-sa"]
+    landing["GCS landing<br/>7 dias; restrito"]
+    bronze["GCS Bronze Parquet<br/>imutável"]
+    raw["GCS raw Avro<br/>30 dias"]
+    quarantine["BigQuery quarentena<br/>30 dias"]
+    silverr["Silver restrito<br/>contém id_aluno"]
+    silver["Silver agregado"]
+    gold["Gold e views estáveis<br/>sem id_aluno"]
+    ops["ops.active_release<br/>ponteiro transacional"]
+    topic["Pub/Sub topic<br/>Avro v1"]
+    dataflow["Dataflow Beam<br/>dataflow-worker"]
+  end
+
+  subgraph trust2["Controle e observabilidade"]
+    scheduler["Cloud Scheduler<br/>scheduler-sa"]
+    monitor["Cloud Monitoring<br/>SLOs e alertas"]
+    budget["Budget<br/>aviso, não hard cap"]
+    registry["Artifact Registry<br/>digests imutáveis"]
+  end
+
+  scheduler --> workflow
+  workflow --> batch
+  bd --> batch
+  batch --> landing --> bronze
+  bronze --> silverr --> silver --> gold
+  gold --> ops
+  producer --> topic --> dataflow
+  dataflow --> raw
+  dataflow --> quarantine
+  dataflow --> silver
+  registry --> batch
+  registry --> dataflow
+  batch --> monitor
+  dataflow --> monitor
+  monitor --> budget
+
+  classDef restricted fill:#fce7f3,stroke:#9d174d,color:#500724
+  classDef published fill:#dcfce7,stroke:#166534,color:#052e16
+  class landing,bronze,raw,quarantine,silverr restricted
+  class gold,ops published
+

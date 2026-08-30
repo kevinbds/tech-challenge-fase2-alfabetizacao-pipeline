@@ -1,0 +1,39 @@
+sequenceDiagram
+  autonumber
+  participant S as Scheduler
+  participant W as Workflows
+  participant B as Batch Job
+  participant Q as BigQuery fonte
+  participant G as GCS Bronze
+  participant D as dbt/BigQuery
+  participant A as active_release
+
+  rect rgb(235, 245, 255)
+    Note over S,A: Batch mensal — dia 1, 03:00 America/Sao_Paulo
+    S->>W: iniciar execução
+    W->>B: executar com digest fixado
+    B->>Q: dry-run (máx. 25 GiB)
+    alt custo acima do limite
+      B-->>W: aborta sem exportar
+    else dentro do limite
+      B->>Q: fingerprint e EXPORT DATA
+      B->>G: objeto Parquet imutável + manifest
+      B->>D: registrar snapshot elegível
+      D->>D: testes de qualidade e Gold candidato
+      D->>A: transação: validar singleton e promover
+    end
+  end
+
+  rect rgb(245, 255, 235)
+    Note over W,A: Demo streaming simulada
+    W->>W: aguardar Dataflow RUNNING (15 min)
+    W->>W: publicar fixture Avro
+    W->>W: aguardar estágio (10 min)
+    W->>W: solicitar DRAIN e aguardar DRAINED (20 min)
+    W->>D: MERGE, testes, raw, backlog e DLQ
+    alt cancelado, FAILED ou timeout
+      W-->>W: falhar demo, não promover como sucesso
+    else resultados esperados
+      D->>A: overlay somente se event_time > promoted_at
+    end
+  end
