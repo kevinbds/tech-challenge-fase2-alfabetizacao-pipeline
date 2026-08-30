@@ -1,4 +1,4 @@
-{{ config(materialized='view') }}
+{{ config(materialized='view', tags=['stream_demo']) }}
 
 with release_ativo as (
     select
@@ -21,7 +21,7 @@ lote as (
 
 eventos_deduplicados as (
     select evento.*
-    from {{ source('ops', 'stream_latest') }} as evento
+    from {{ ref('stream_latest') }} as evento
     inner join release_ativo on evento.event_time > release_ativo.promoted_at
     where evento.simulation = true
     qualify row_number() over (

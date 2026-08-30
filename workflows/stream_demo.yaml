@@ -94,23 +94,19 @@ main:
                 switch:
                   - condition: ${not(drained_result.success)}
                     raise: '${"Drain falhou: " + drained_result.final_state}'
-            - merge_stream:
-                call: googleapis.bigquery.v2.jobs.query
+            - build_stream_models:
+                call: googleapis.run.v2.projects.locations.jobs.run
                 args:
-                  projectId: ${project_id}
+                  name: ${args.dbt_job_name}
                   body:
-                    useLegacySql: false
-                    query: ${args.merge_and_test_sql}
-                    maximumBytesBilled: ${args.maximum_bytes_billed}
-                    parameterMode: NAMED
-                    queryParameters:
-                      - {name: correlation_id, parameterType: {type: STRING}, parameterValue: {value: '${correlation_id}'}}
-                      - {name: window_start, parameterType: {type: TIMESTAMP}, parameterValue: {value: '${window_start}'}}
-                result: merge_result
-            - require_merge:
-                switch:
-                  - condition: ${default(map.get(merge_result, "jobComplete"), false) == false}
-                    raise: "MERGE correlacionado não concluiu"
+                    overrides:
+                      containerOverrides:
+                        - args: [build, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --select, 'tag:stream_demo']
+                          env:
+                            - {name: CORRELATION_ID, value: '${correlation_id}'}
+                            - {name: RUN_STARTED, value: '${window_start}'}
+                  connector_params: {timeout: 3600}
+                result: dbt_execution
             - check_backlogs:
                 call: googleapis.bigquery.v2.jobs.query
                 args:

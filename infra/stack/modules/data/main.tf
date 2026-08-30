@@ -145,10 +145,9 @@ resource "google_bigquery_table" "stream_quarantine" {
   }
 
   schema = jsonencode([
-    { name = "event_id", type = "STRING", mode = "REQUIRED" },
+    { name = "message_id", type = "STRING", mode = "REQUIRED" },
     { name = "reason_code", type = "STRING", mode = "REQUIRED" },
     { name = "ingestion_time", type = "TIMESTAMP", mode = "REQUIRED" },
-    { name = "payload", type = "JSON", mode = "NULLABLE" },
   ])
 }
 
@@ -168,6 +167,7 @@ resource "google_bigquery_table" "stream_rate" {
 
   schema = jsonencode([
     { name = "event_id", type = "STRING", mode = "REQUIRED" },
+    { name = "message_id", type = "STRING", mode = "REQUIRED" },
     { name = "event_time", type = "TIMESTAMP", mode = "REQUIRED" },
     { name = "publish_time", type = "TIMESTAMP", mode = "REQUIRED" },
     { name = "ingestion_time", type = "TIMESTAMP", mode = "REQUIRED" },
@@ -177,5 +177,6 @@ resource "google_bigquery_table" "stream_rate" {
     { name = "taxa_alfabetizacao", type = "NUMERIC", mode = "REQUIRED" },
     { name = "taxa_participacao", type = "NUMERIC", mode = "NULLABLE" },
     { name = "correlation_id", type = "STRING", mode = "REQUIRED" },
+    { name = "simulation", type = "BOOLEAN", mode = "REQUIRED" },
   ])
 }

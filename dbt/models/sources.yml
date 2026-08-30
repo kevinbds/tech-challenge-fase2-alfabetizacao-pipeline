@@ -20,6 +20,11 @@ sources:
       - name: release_registry
       - name: stream_latest
       - name: stream_event_audit
+  - name: streaming
+    database: "{{ env_var('GCP_PROJECT_ID', 'local-offline-project') }}"
+    schema: silver
+    tables:
+      - name: municipal_rate_stream
   - name: diretorios
     database: basedosdados
     schema: br_bd_diretorios_brasil

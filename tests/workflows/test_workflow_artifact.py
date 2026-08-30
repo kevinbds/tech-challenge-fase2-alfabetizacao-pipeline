@@ -113,6 +113,16 @@ for step_name in ("list_active_jobs", "cancel"):
     assert step_by_name[step_name]["args"]["connector_params"]["timeout"] > 0
 drain = next(step["request_drain"] for step in guarded["try"]["steps"] if "request_drain" in step)
 assert drain["args"]["connector_params"]["timeout"] > 0
+build_stream = next(
+    step["build_stream_models"]
+    for step in guarded["try"]["steps"]
+    if "build_stream_models" in step
+)
+assert build_stream["call"] == "googleapis.run.v2.projects.locations.jobs.run"
+assert build_stream["args"]["name"] == "${args.dbt_job_name}"
+assert build_stream["args"]["connector_params"]["timeout"] == 3600
+build_args = build_stream["args"]["body"]["overrides"]["containerOverrides"][0]["args"]
+assert "tag:stream_demo" in build_args
 guarded_except = guarded["except"]["steps"]
 cleanup_guard = next(
     step["cleanup_after_failure"]
@@ -162,6 +172,7 @@ def test_workflow_is_structurally_valid_and_bounded() -> None:
     assert "window_start" in content
     assert "objects.items[0].updated >= window_start" in content
     assert "projects.locations.operations.get" not in content
+    assert "merge_and_test_sql" not in content
 
 
 def test_flex_launch_and_ambiguous_result_are_inside_guarded_cleanup() -> None:

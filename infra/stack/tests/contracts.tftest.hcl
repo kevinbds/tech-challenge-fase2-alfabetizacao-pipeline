@@ -44,6 +44,30 @@ run "platform_contract" {
     error_message = "A assinatura GCS deve gravar Avro do schema do tópico com metadados e rotação de 60 s."
   }
   assert {
+    condition = (
+      output.streaming_table_contracts.valid == {
+        ano                = "INTEGER"
+        correlation_id     = "STRING"
+        event_id           = "STRING"
+        event_time         = "TIMESTAMP"
+        id_municipio       = "STRING"
+        ingestion_time     = "TIMESTAMP"
+        message_id         = "STRING"
+        publish_time       = "TIMESTAMP"
+        rede               = "STRING"
+        simulation         = "BOOLEAN"
+        taxa_alfabetizacao = "NUMERIC"
+        taxa_participacao  = "NUMERIC"
+      } &&
+      output.streaming_table_contracts.quarantine == {
+        ingestion_time = "TIMESTAMP"
+        message_id     = "STRING"
+        reason_code    = "STRING"
+      }
+    )
+    error_message = "Os schemas BigQuery devem aceitar exatamente as linhas válidas e de quarentena produzidas pelo Beam."
+  }
+  assert {
     condition     = output.external_table_contracts["alunos"].autodetect == false && startswith(output.external_table_contracts["alunos"].reference_file_schema_uri, "gs://") && output.external_table_contracts["alunos"].dataset_id == "bronze_restricted"
     error_message = "External Parquet deve usar arquivo de schema de referência e autodetect desligado."
   }
@@ -63,6 +87,9 @@ run "platform_contract" {
       strcontains(output.stream_demo_workflow_contract, "connector_params") &&
       strcontains(output.stream_demo_workflow_contract, "additionalUserLabels") &&
       strcontains(output.stream_demo_workflow_contract, "RUN_ID") &&
+      strcontains(output.stream_demo_workflow_contract, "valid_table:") &&
+      strcontains(output.stream_demo_workflow_contract, "quarantine_table:") &&
+      !strcontains(output.stream_demo_workflow_contract, "output_table:") &&
       strcontains(output.stream_demo_workflow_contract, "googleapis.dataflow.v1b3.projects.locations.flexTemplates.launch") &&
       strcontains(output.stream_demo_workflow_contract, "googleapis.dataflow.v1b3.projects.locations.jobs.get") &&
       strcontains(output.stream_demo_workflow_contract, "googleapis.dataflow.v1b3.projects.locations.jobs.update") &&

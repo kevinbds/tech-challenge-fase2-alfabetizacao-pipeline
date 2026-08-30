@@ -18,7 +18,9 @@ main:
               containerSpecGcsPath: ${template_gcs_path}
               parameters:
                 input_subscription: ${input_subscription}
-                output_table: ${project_id}:silver.municipal_rate_stream
+                valid_table: ${project_id}:silver.municipal_rate_stream
+                quarantine_table: ${project_id}:quarantine.stream_events
+                write_method: STORAGE_API_AT_LEAST_ONCE
               environment:
                 tempLocation: ${temp_location}
                 stagingLocation: ${staging_location}

@@ -45,7 +45,7 @@ class StagedEventRow(TypedDict):
     id_municipio: str
     rede: str
     taxa_alfabetizacao: float
-    participacao: float | None
+    taxa_participacao: float | None
     correlation_id: str
     simulation: bool
 
@@ -97,7 +97,7 @@ class RouteEventDoFn(_DoFn):
             id_municipio=event.id_municipio,
             rede=event.rede,
             taxa_alfabetizacao=event.taxa_alfabetizacao,
-            participacao=event.participacao,
+            taxa_participacao=event.participacao,
             correlation_id=event.correlation_id,
             simulation=event.simulation,
         )

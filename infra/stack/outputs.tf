@@ -32,6 +32,11 @@ output "streaming_archive_contract" {
   value = module.streaming.archive_contract
 }
 
+output "streaming_table_contracts" {
+  description = "Schemas de destino que o entrypoint Beam precisa produzir."
+  value       = module.data.streaming_table_contracts
+}
+
 output "stream_demo_workflow_contract" {
   description = "Template do demo, usado para validar correlação e cleanup no plano mockado."
   value       = module.runtime.stream_demo_source

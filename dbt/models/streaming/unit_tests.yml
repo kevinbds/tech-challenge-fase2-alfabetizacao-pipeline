@@ -1,0 +1,41 @@
+version: 2
+
+unit_tests:
+  - name: stream_latest_escolhe_evento_canonico
+    model: stream_latest
+    given:
+      - input: source('streaming', 'municipal_rate_stream')
+        format: sql
+        rows: |
+          select 'same' event_id, 'message-old' message_id,
+                 timestamp '2026-08-29 11:00:00' event_time,
+                 timestamp '2026-08-29 11:00:01' publish_time,
+                 timestamp '2026-08-29 11:00:02' ingestion_time,
+                 2024 ano, '3550308' id_municipio, 'municipal' rede,
+                 70 taxa_alfabetizacao, 90 taxa_participacao,
+                 'run-1' correlation_id, true simulation
+          union all
+          select 'same', 'message-new', timestamp '2026-08-29 12:00:00',
+                 timestamp '2026-08-29 12:00:01', timestamp '2026-08-29 12:00:02',
+                 2024, '3550308', 'municipal', 72, 91, 'run-1', true
+    expect:
+      rows:
+        - {event_id: same, taxa_alfabetizacao: 72, percentual_participacao: 91}
+  - name: stream_event_audit_registra_copia_descartada
+    model: stream_event_audit
+    given:
+      - input: source('streaming', 'municipal_rate_stream')
+        format: sql
+        rows: |
+          select 'same' event_id, 'message-old' message_id,
+                 timestamp '2026-08-29 11:00:00' event_time,
+                 timestamp '2026-08-29 11:00:01' publish_time,
+                 timestamp '2026-08-29 11:00:02' ingestion_time,
+                 'run-1' correlation_id
+          union all
+          select 'same', 'message-new', timestamp '2026-08-29 12:00:00',
+                 timestamp '2026-08-29 12:00:01', timestamp '2026-08-29 12:00:02',
+                 'run-1'
+    expect:
+      rows:
+        - {event_id: same, message_id: message-old, correlation_id: run-1}

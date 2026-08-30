@@ -108,7 +108,7 @@ unit_tests:
         rows: |
           select true singleton_key, 'local-release' release_id,
                  timestamp '2024-06-01 00:00:00' promoted_at
-      - input: source('ops', 'stream_latest')
+      - input: ref('stream_latest')
         format: sql
         rows: |
           select 'old' event_id, 2024 ano, '3550308' id_municipio, 'municipal' rede,

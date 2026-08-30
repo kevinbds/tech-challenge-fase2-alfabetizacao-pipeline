@@ -130,7 +130,9 @@ resource "google_storage_bucket_object" "flex_template" {
       description = "Template preparado; nenhum job é iniciado pelo Terraform"
       parameters = [
         { name = "input_subscription", label = "Pub/Sub subscription" },
-        { name = "output_table", label = "BigQuery target" },
+        { name = "valid_table", label = "BigQuery valid staging target" },
+        { name = "quarantine_table", label = "BigQuery quarantine target" },
+        { name = "write_method", label = "BigQuery Storage Write API method" },
       ]
     }
   })

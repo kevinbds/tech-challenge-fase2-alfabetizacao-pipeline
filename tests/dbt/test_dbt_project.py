@@ -38,6 +38,39 @@ def test_gold_models_never_expose_student_identifier() -> None:
         assert forbidden not in model.read_text(encoding="utf-8").lower()
 
 
+def test_stream_demo_selection_contains_dedupe_audit_and_overlay() -> None:
+    # Given: the exact selector executed by the post-drain Cloud Run override.
+    # When: dbt resolves the selector against the integrated manifest.
+    selection = subprocess.run(
+        [
+            "dbt",
+            "ls",
+            "--quiet",
+            "--project-dir",
+            str(DBT_DIR),
+            "--profiles-dir",
+            str(DBT_DIR),
+            "--select",
+            "tag:stream_demo",
+            "--resource-type",
+            "model",
+            "--output",
+            "name",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    # Then: the executable selection contains the complete post-drain chain.
+    assert selection.returncode == 0, selection.stdout + selection.stderr
+    assert set(selection.stdout.splitlines()) == {
+        "stream_latest",
+        "stream_event_audit",
+        "indicador_atual_hibrido",
+    }
+
+
 def test_sqlfluff_lints_dbt_models_from_repository_root() -> None:
     result = subprocess.run(
         [
