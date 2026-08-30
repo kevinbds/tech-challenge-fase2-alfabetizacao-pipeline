@@ -35,6 +35,8 @@ dataflow = [
 ]
 dbt = [
     "dbt-bigquery>=1.10,<2",
+    "dbt-duckdb>=1.10,<2",
+    "duckdb>=1.4,<2",
 ]
 quality = [
     "jsonschema>=4.25,<5",
@@ -123,3 +125,7 @@ show_missing = true
 dialect = "bigquery"
 templater = "jinja"
 max_line_length = 100
+
+[tool.sqlfluff.templater.jinja]
+load_macros_from_path = "dbt/lint_macros,dbt/macros"
+apply_dbt_builtins = true

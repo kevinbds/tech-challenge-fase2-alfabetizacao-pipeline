@@ -1,0 +1,15 @@
+alfabetizacao_medallion:
+  target: offline
+  outputs:
+    offline:
+      type: duckdb
+      path: ':memory:'
+      threads: 1
+    cloud:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: alfabetizacao
+      location: US
+      threads: 4
+      priority: interactive

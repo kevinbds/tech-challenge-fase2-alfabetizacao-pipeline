@@ -1,0 +1,43 @@
+name: alfabetizacao_medallion
+version: 1.0.0
+config-version: 2
+profile: alfabetizacao_medallion
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+target-path: target
+clean-targets: [target, dbt_packages, logs]
+
+vars:
+  release_id: local-release
+
+models:
+  alfabetizacao_medallion:
+    staging:
+      +materialized: view
+      +schema: staging
+    silver:
+      +materialized: incremental
+      +incremental_strategy: insert_overwrite
+      +partition_by: {field: ano_particao, data_type: date, granularity: year}
+      +cluster_by: [release_id, id_municipio, rede]
+      +schema: silver
+    silver_restricted:
+      +materialized: incremental
+      +incremental_strategy: insert_overwrite
+      +partition_by: {field: ano_particao, data_type: date, granularity: year}
+      +cluster_by: [release_id, id_municipio, rede]
+      +schema: silver_restricted
+    quality:
+      +materialized: incremental
+      +incremental_strategy: append
+      +schema: quality
+    gold:
+      +schema: gold
+    ops:
+      +materialized: view
+      +schema: ops

@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: indicador_municipio
+    description: Indicador oficial municipal candidato, enriquecido pelo diretório canônico.
+    tests:
+      - unique_key:
+          arguments: {columns: [release_id, ano, id_municipio, rede]}
+    columns:
+      - name: taxa_alfabetizacao
+        description: Percentual oficial de alfabetização.
+        data_tests: [not_null]
+  - name: comparativo_meta_resultado
+    description: Comparação anual com a meta municipal de referência mais recente disponível.
+    tests:
+      - unique_key:
+          arguments: {columns: [release_id, ano_resultado, nivel_geografico, id_geografia, rede]}
+  - name: evolucao_alfabetizacao
+    description: Evolução anual e variação em pontos percentuais por município e rede.
+    tests:
+      - unique_key:
+          arguments: {columns: [release_id, ano, id_municipio, rede]}
+  - name: indicador_atual_hibrido
+    description: Visão atual que sobrepõe somente simulações posteriores à promoção oficial.
+
+exposures:
+  - name: painel_indicador_743
+    type: dashboard
+    maturity: high
+    url: https://lookerstudio.google.com/
+    description: Superfície analítica do Indicador 743, sem dados individuais.
+    depends_on:
+      - ref('indicador_atual_hibrido')
+      - ref('comparativo_meta_resultado')
+    owner:
+      name: Equipe Tech Challenge
+      email: dados@example.invalid
