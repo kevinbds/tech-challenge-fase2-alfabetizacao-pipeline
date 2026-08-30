@@ -53,7 +53,7 @@ main:
                   body:
                     overrides:
                       containerOverrides:
-                        - args: [--mode, pubsub, --topic, '${args.topic}', --fixture, /opt/producer/demo.json, --report, /tmp/producer-report.json, --correlation-id, '${correlation_id}']
+                        - args: [--mode, pubsub, --topic, '${args.topic}', --fixture, /app/contracts/events/fixtures/demo.json, --report, /tmp/producer-report.json, --correlation-id, '${correlation_id}']
                 result: producer_execution
             - independent_stage_checks:
                 parallel:
