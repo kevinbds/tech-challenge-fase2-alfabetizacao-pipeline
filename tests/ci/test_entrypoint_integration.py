@@ -32,10 +32,21 @@ def test_container_entrypoints_when_integration_gate_is_enabled() -> None:
     manifest = SmokeManifest.model_validate_json(
         Path("containers/smoke-contract.json").read_text(encoding="utf-8")
     )
+    assert manifest.images["producer"].command == (
+        "python",
+        "-m",
+        "alfabetizacao_pipeline.streaming.producer",
+        "--help",
+    )
 
     # When: every specialized image entrypoint is driven through its real local surface.
     results = {
-        name: subprocess.run(image.command, check=False, capture_output=True, text=True)
+        name: subprocess.run(
+            ("uv", "run", "--frozen", "--all-groups", *image.command),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
         for name, image in manifest.images.items()
     }
 

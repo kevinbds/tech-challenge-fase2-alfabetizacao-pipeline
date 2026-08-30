@@ -104,10 +104,10 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 @app.command()
 def main(
     mode: Annotated[ProducerMode, typer.Option()],
-    topic: Annotated[str, typer.Option()],
+    topic: Annotated[str, typer.Option(envvar="PUBSUB_TOPIC")],
     fixture: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
     report: Annotated[Path, typer.Option(dir_okay=False)],
-    correlation_id: Annotated[str | None, typer.Option()] = None,
+    correlation_id: Annotated[str | None, typer.Option(envvar="CORRELATION_ID")] = None,
 ) -> None:
     """Executa o producer em Pub/Sub real ou no modo local explicitamente pedido."""
     result = run_producer(mode, topic, fixture, PublishPolicy(), correlation_id)

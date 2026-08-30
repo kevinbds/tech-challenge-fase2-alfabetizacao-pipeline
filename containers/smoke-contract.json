@@ -8,6 +8,7 @@
   "images": {
     "batch": {"command": ["alfabetizacao", "batch", "run", "--help"]},
     "dbt": {"command": ["dbt", "--version"]},
-    "producer": {"command": ["python", "-m", "alfabetizacao_pipeline.streaming.demo", "--help"]}
+    "producer": {"command": ["python", "-m", "alfabetizacao_pipeline.streaming.producer", "--help"]},
+    "dataflow": {"command": ["python", "containers/dataflow/beam_entrypoint.py", "--help"]}
   }
 }

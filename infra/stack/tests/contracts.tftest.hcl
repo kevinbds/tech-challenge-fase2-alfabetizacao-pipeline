@@ -25,8 +25,6 @@ variables {
   }
   budget_currency              = "BRL"
   runtime_entrypoints_verified = true
-  batch_command                = ["mock-batch-entrypoint"]
-  producer_command             = ["mock-producer-entrypoint"]
 }
 
 run "platform_contract" {
@@ -113,6 +111,15 @@ run "platform_contract" {
   assert {
     condition     = output.runtime_entrypoint_contract.status == "verified-by-integration" && output.runtime_entrypoint_contract.requires_integration_gate
     error_message = "Entrypoints de Batch e Producer só podem ser liberados após o gate da integração."
+  }
+  assert {
+    condition = (
+      output.runtime_entrypoint_contract.jobs["batch"].command == tolist(["alfabetizacao"]) &&
+      output.runtime_entrypoint_contract.jobs["batch"].args == tolist(["batch", "run"]) &&
+      output.runtime_entrypoint_contract.jobs["producer"].command == tolist(["python", "-m", "alfabetizacao_pipeline.streaming.producer"]) &&
+      output.runtime_entrypoint_contract.jobs["producer"].args[0] == "--mode"
+    )
+    error_message = "Os jobs devem expor os entrypoints reais validados no SHA integrado."
   }
 }
 

@@ -16,5 +16,6 @@ WORKDIR /app
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --home-dir /app app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --chown=app:app contracts/events/fixtures/demo.json /app/contracts/events/fixtures/demo.json
 USER app
-ENTRYPOINT ["python", "-m", "alfabetizacao_pipeline.streaming.demo"]
+ENTRYPOINT ["python", "-m", "alfabetizacao_pipeline.streaming.producer"]

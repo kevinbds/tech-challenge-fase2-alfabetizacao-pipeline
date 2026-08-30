@@ -138,26 +138,26 @@ variable "runtime_entrypoints_verified" {
 
 variable "batch_command" {
   type        = list(string)
-  default     = []
-  description = "Command do container Batch, preenchido somente pelo gate de integração."
+  default     = ["alfabetizacao"]
+  description = "Executável do container Batch validado no SHA integrado."
 }
 
 variable "batch_args" {
   type        = list(string)
-  default     = []
-  description = "Argumentos do Batch validados no SHA integrado."
+  default     = ["batch", "run"]
+  description = "Subcomando Batch validado; a execução ainda deve informar fonte e ano."
 }
 
 variable "producer_command" {
   type        = list(string)
-  default     = []
-  description = "Command do Producer, preenchido somente pelo gate de integração."
+  default     = ["python", "-m", "alfabetizacao_pipeline.streaming.producer"]
+  description = "Executável standalone do Producer validado no SHA integrado."
 }
 
 variable "producer_args" {
   type        = list(string)
-  default     = []
-  description = "Argumentos do Producer validados no SHA integrado."
+  default     = ["--mode", "pubsub", "--fixture", "/app/contracts/events/fixtures/demo.json", "--report", "/tmp/producer-report.json"]
+  description = "Argumentos estáticos do Producer; tópico e correlação entram pelo ambiente."
 }
 
 variable "maximum_bytes_billed" {

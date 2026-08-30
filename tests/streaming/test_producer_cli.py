@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -48,3 +49,36 @@ def test_local_producer_publishes_ten_and_rejects_incompatible_before_port(tmp_p
     assert report.read_text(encoding="utf-8") == (
         '{"mode": "local", "published": 10, "schema_rejected": 1}\n'
     )
+
+
+def test_local_producer_uses_cloud_run_environment_when_options_are_omitted(
+    tmp_path: Path,
+) -> None:
+    # Given the environment injected by the Terraform Cloud Run job and Workflow override
+    report = tmp_path / "producer-report.json"
+    environment = os.environ.copy()
+    environment["PUBSUB_TOPIC"] = "projects/demo/topics/literacy"
+    environment["CORRELATION_ID"] = "integration-run"
+
+    # When the standalone producer runs without topic or correlation CLI options
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "alfabetizacao_pipeline.streaming.producer",
+            "--mode",
+            "local",
+            "--fixture",
+            "contracts/events/fixtures/demo.json",
+            "--report",
+            str(report),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    # Then the runtime boundary supplies every omitted required value
+    assert completed.returncode == 0, completed.stderr
+    assert report.is_file()

@@ -22,9 +22,9 @@ reference_schema_uris = {
 
 scheduler_enabled = false
 runtime_entrypoints_verified = false # altere somente após o gate de integração dos containers
-batch_command               = []    # fornecido pelo SHA integrado
-batch_args                  = []
-producer_command            = []
-producer_args               = []
+batch_command               = ["alfabetizacao"]
+batch_args                  = ["batch", "run"]
+producer_command            = ["python", "-m", "alfabetizacao_pipeline.streaming.producer"]
+producer_args               = ["--mode", "pubsub", "--fixture", "/app/contracts/events/fixtures/demo.json", "--report", "/tmp/producer-report.json"]
 budget_currency   = "BRL"
 # budget_amount omitido usa 50 apenas porque BRL foi escolhido explicitamente.
