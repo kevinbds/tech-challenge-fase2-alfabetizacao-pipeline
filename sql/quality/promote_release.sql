@@ -1,6 +1,11 @@
 declare candidate_release string default @release_id;
 declare current_release string;
+declare prior_release string;
 declare active_rows int64;
+declare active_registry_rows int64;
+declare active_registry_state_rows int64;
+declare prior_registry_rows int64;
+declare prior_registry_state_rows int64;
 declare candidate_rows int64;
 declare quality_rows int64;
 declare required_rules_seen int64;
@@ -12,6 +17,44 @@ set active_rows
     where singleton_key = true
 );
 assert active_rows = 1 as 'ops.active_release must contain exactly one singleton row';
+
+set (current_release, prior_release) = (
+    select as struct
+        release_id,
+        prior_release_id
+    from `{{ project_id }}.ops.active_release`
+    where singleton_key = true
+);
+assert current_release is not null as 'active release pointer cannot be null';
+assert candidate_release != current_release as 'candidate release is already active';
+assert (
+    prior_release is null or prior_release != current_release
+) as 'active release cannot reference itself as prior';
+
+set active_registry_rows = (
+    select count(*) from `{{ project_id }}.ops.release_registry`
+    where release_id = current_release
+);
+set active_registry_state_rows = (
+    select count(*) from `{{ project_id }}.ops.release_registry`
+    where release_id = current_release and status = 'active'
+);
+assert (
+    active_registry_rows = 1 and active_registry_state_rows = 1
+) as 'active release pointer must resolve to exactly one active registry row';
+
+set prior_registry_rows = (
+    select count(*) from `{{ project_id }}.ops.release_registry`
+    where release_id = prior_release
+);
+set prior_registry_state_rows = (
+    select count(*) from `{{ project_id }}.ops.release_registry`
+    where release_id = prior_release and status = 'inactive'
+);
+assert (
+    prior_release is null
+    or (prior_registry_rows = 1 and prior_registry_state_rows = 1)
+) as 'prior release pointer must resolve to exactly one inactive registry row';
 
 set candidate_rows = (
     select count(*)
@@ -55,11 +98,6 @@ set critical_failures = (
     where release_id = candidate_release and severity = 'critical'
 );
 assert critical_failures = 0 as 'candidate release has critical quality failures';
-
-set current_release = (
-    select release_id from `{{ project_id }}.ops.active_release`
-    where singleton_key = true
-);
 
 begin transaction;
 update `{{ project_id }}.ops.active_release`

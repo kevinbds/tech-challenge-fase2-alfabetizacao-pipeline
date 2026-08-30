@@ -99,6 +99,47 @@ def test_promotion_rejects_critical_and_promotes_complete_candidate() -> None:
         ).fetchone() == ("release-b", "release-a")
 
 
+def test_promotion_rejects_active_release_as_candidate_before_any_dml() -> None:
+    with _release_database() as connection:
+        _ = connection.execute(
+            "update release_registry set status = 'succeeded' where release_id = 'release-a'"
+        )
+        _insert_quality_results(connection)
+        _ = connection.execute("update release_results set release_id = 'release-a'")
+        with pytest.raises(ScriptAssertionError):
+            run_bigquery_script(connection, PROMOTE, release_id="release-a")
+        assert connection.execute(
+            "select release_id, prior_release_id from active_release"
+        ).fetchone() == ("release-a", None)
+        assert connection.execute(
+            "select status from release_registry where release_id = 'release-a'"
+        ).fetchone() == ("succeeded",)
+
+
+def test_promotion_rejects_active_pointer_with_self_referencing_prior() -> None:
+    with _release_database() as connection:
+        _ = connection.execute("update active_release set prior_release_id = 'release-a'")
+        _insert_quality_results(connection)
+        with pytest.raises(ScriptAssertionError):
+            run_bigquery_script(connection, PROMOTE, release_id="release-b")
+        assert connection.execute(
+            "select release_id, prior_release_id from active_release"
+        ).fetchone() == ("release-a", "release-a")
+
+
+def test_promotion_rejects_active_pointer_with_inconsistent_registry_state() -> None:
+    with _release_database() as connection:
+        _ = connection.execute(
+            "update release_registry set status = 'succeeded' where release_id = 'release-a'"
+        )
+        _insert_quality_results(connection)
+        with pytest.raises(ScriptAssertionError):
+            run_bigquery_script(connection, PROMOTE, release_id="release-b")
+        assert connection.execute(
+            "select release_id, prior_release_id from active_release"
+        ).fetchone() == ("release-a", None)
+
+
 def test_rollback_executes_delivered_script_and_restores_prior_release() -> None:
     with _release_database() as connection:
         _insert_quality_results(connection)
