@@ -1,0 +1,14 @@
+{
+  "image": "REGION-docker.pkg.dev/PROJECT/REPOSITORY/dataflow@sha256:REPLACE_WITH_DIGEST",
+  "metadata": {
+    "name": "alfabetizacao-streaming-v1",
+    "description": "Pipeline temporário da demonstração streaming",
+    "parameters": [
+      {"name": "input_subscription", "label": "Dataflow subscription", "isOptional": false},
+      {"name": "valid_table", "label": "BigQuery valid staging table", "isOptional": false},
+      {"name": "quarantine_table", "label": "BigQuery quarantine table", "isOptional": false},
+      {"name": "write_method", "label": "BigQuery write method", "isOptional": false}
+    ]
+  },
+  "sdkInfo": {"language": "PYTHON"}
+}

@@ -1,0 +1,19 @@
+{
+  "type": "record",
+  "name": "MunicipalLiteracyRateUpdatedV1",
+  "namespace": "br.fiap.alfabetizacao.events.v1",
+  "fields": [
+    {"name": "schema_version", "type": "string"},
+    {"name": "event_id", "type": "string"},
+    {"name": "event_type", "type": "string"},
+    {"name": "simulation", "type": "boolean"},
+    {"name": "event_time", "type": "string"},
+    {"name": "ano", "type": "long"},
+    {"name": "id_municipio", "type": "string"},
+    {"name": "rede", "type": "string"},
+    {"name": "taxa_alfabetizacao", "type": "double"},
+    {"name": "participacao", "type": ["null", "double"], "default": null},
+    {"name": "producer", "type": "string"},
+    {"name": "correlation_id", "type": "string"}
+  ]
+}

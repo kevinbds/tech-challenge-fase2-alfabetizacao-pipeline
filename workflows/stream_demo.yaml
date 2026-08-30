@@ -1,0 +1,359 @@
+main:
+  params: [args]
+  steps:
+    - init:
+        assign:
+          - project_id: ${args.project_id}
+          - region: ${args.region}
+          - job_name: ${"literacy-demo-" + string(sys.now())}
+          - correlation_id: ${job_name}
+          - window_start: ${time.format(sys.now())}
+          - dataflow_job_id: null
+    - guarded_execution:
+        try:
+          steps:
+            - launch_flex:
+                call: googleapis.dataflow.v1b3.projects.locations.flexTemplates.launch
+                args:
+                  projectId: ${project_id}
+                  location: ${region}
+                  body:
+                    launchParameter:
+                      jobName: ${job_name}
+                      containerSpecGcsPath: ${args.flex_template_spec_gcs_uri}
+                      parameters:
+                        input_subscription: ${args.dataflow_subscription}
+                        valid_table: ${args.valid_staging_table}
+                        quarantine_table: ${args.quarantine_table}
+                        write_method: STORAGE_API_AT_LEAST_ONCE
+                      environment:
+                        serviceAccountEmail: ${args.dataflow_service_account}
+                        tempLocation: ${args.temp_location}
+                        stagingLocation: ${args.staging_location}
+                        numWorkers: 1
+                        maxWorkers: 2
+                        additionalExperiments: [enable_portable_runner]
+                        additionalUserLabels: {run_id: '${correlation_id}'}
+                result: launch_result
+            - remember_job:
+                assign:
+                  - dataflow_job_id: ${launch_result.job.id}
+            - wait_running:
+                call: wait_dataflow_state
+                args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', target_state: JOB_STATE_RUNNING, max_attempts: 90}
+                result: running_result
+            - require_running:
+                switch:
+                  - condition: ${not(running_result.success)}
+                    raise: '${"Dataflow não alcançou RUNNING: " + running_result.final_state}'
+            - publish_fixture:
+                call: googleapis.run.v2.projects.locations.jobs.run
+                args:
+                  name: ${args.producer_job_name}
+                  body:
+                    overrides:
+                      containerOverrides:
+                        - args: [--mode, pubsub, --topic, '${args.topic}', --fixture, /opt/producer/demo.json, --report, /tmp/producer-report.json, --correlation-id, '${correlation_id}']
+                result: producer_execution
+            - independent_stage_checks:
+                parallel:
+                  branches:
+                    - silver_branch:
+                        steps:
+                          - wait_silver:
+                              call: wait_bigquery_count
+                              args: {project_id: '${project_id}', query: '${args.silver_count_query}', expected: 8, correlation_id: '${correlation_id}', window_start: '${window_start}', max_attempts: 60}
+                              result: silver_result
+                          - require_silver:
+                              switch:
+                                - condition: ${not(silver_result.success)}
+                                  raise: "Silver correlacionada não materializou oito eventos"
+                    - raw_archive_branch:
+                        steps:
+                          - wait_raw_avro:
+                              call: wait_gcs_object
+                              args: {bucket: '${args.raw_archive_bucket}', prefix: '${args.raw_archive_prefix + "/" + correlation_id + "/"}', window_start: '${window_start}', max_attempts: 60}
+                              result: raw_result
+                          - require_raw:
+                              switch:
+                                - condition: ${not(raw_result.success)}
+                                  raise: "Arquivo raw Avro desta execução não apareceu"
+            - request_drain:
+                call: googleapis.dataflow.v1b3.projects.locations.jobs.update
+                args:
+                  projectId: ${project_id}
+                  location: ${region}
+                  jobId: ${dataflow_job_id}
+                  body: {requestedState: JOB_STATE_DRAINED}
+                  connector_params: {timeout: 30}
+            - wait_drained:
+                call: wait_dataflow_state
+                args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', target_state: JOB_STATE_DRAINED, max_attempts: 120}
+                result: drained_result
+            - require_drained:
+                switch:
+                  - condition: ${not(drained_result.success)}
+                    raise: '${"Drain falhou: " + drained_result.final_state}'
+            - merge_stream:
+                call: googleapis.bigquery.v2.jobs.query
+                args:
+                  projectId: ${project_id}
+                  body:
+                    useLegacySql: false
+                    query: ${args.merge_and_test_sql}
+                    maximumBytesBilled: ${args.maximum_bytes_billed}
+                    parameterMode: NAMED
+                    queryParameters:
+                      - {name: correlation_id, parameterType: {type: STRING}, parameterValue: {value: '${correlation_id}'}}
+                      - {name: window_start, parameterType: {type: TIMESTAMP}, parameterValue: {value: '${window_start}'}}
+                result: merge_result
+            - require_merge:
+                switch:
+                  - condition: ${default(map.get(merge_result, "jobComplete"), false) == false}
+                    raise: "MERGE correlacionado não concluiu"
+            - check_backlogs:
+                call: googleapis.bigquery.v2.jobs.query
+                args:
+                  projectId: ${project_id}
+                  body:
+                    useLegacySql: false
+                    query: ${args.backlog_and_dlq_assert_sql}
+                    maximumBytesBilled: ${args.maximum_bytes_billed}
+                    parameterMode: NAMED
+                    queryParameters:
+                      - {name: correlation_id, parameterType: {type: STRING}, parameterValue: {value: '${correlation_id}'}}
+                      - {name: window_start, parameterType: {type: TIMESTAMP}, parameterValue: {value: '${window_start}'}}
+                result: backlog_result
+            - require_backlogs:
+                switch:
+                  - condition: ${default(map.get(backlog_result, "jobComplete"), false) == false}
+                    raise: "Validação correlacionada de backlog/DLQ falhou"
+        except:
+          as: workflow_error
+          steps:
+            - cleanup_after_failure:
+                try:
+                  call: cleanup_dataflow
+                  args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', job_name: '${job_name}', correlation_id: '${correlation_id}'}
+                except:
+                  as: cleanup_error
+                  steps:
+                    - record_cleanup_failure:
+                        call: sys.log
+                        args:
+                          severity: ERROR
+                          text: "Dataflow cleanup falhou; preservando erro original"
+            - preserve_failure:
+                raise: ${workflow_error}
+    - complete:
+        return: {dataflow_job_id: '${dataflow_job_id}', correlation_id: '${correlation_id}', final_state: '${drained_result.final_state}', success: true}
+
+cleanup_dataflow:
+  params: [project_id, region, job_id, job_name, correlation_id]
+  steps:
+    - route_by_id:
+        switch:
+          - condition: ${job_id != null}
+            next: inspect_known
+        next: init_discovery
+    - init_discovery:
+        assign:
+          - discovery_scan: 1
+          - discovery_deadline: ${sys.now() + 120}
+    - init_page_scan:
+        assign:
+          - page_token: ""
+          - next_page_token: ""
+          - page_count: 1
+          - visited_page_tokens: [""]
+          - matched_job_id: null
+          - duplicate_match: false
+    - list_active_jobs:
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.list
+        args:
+          projectId: ${project_id}
+          location: ${region}
+          filter: ACTIVE
+          pageSize: 100
+          pageToken: ${page_token}
+          connector_params: {timeout: 30}
+        result: active_jobs
+    - validate_listing:
+        switch:
+          - condition: '${get_type(default(map.get(active_jobs, "jobs"), [])) != "list"}'
+            next: no_matching_job
+    - init_search:
+        assign:
+          - candidate_index: 0
+          - candidate_count: ${len(default(map.get(active_jobs, "jobs"), []))}
+    - search_done:
+        switch:
+          - condition: ${candidate_index >= candidate_count}
+            next: capture_next_page
+    - inspect_candidate:
+        assign:
+          - candidate: ${active_jobs.jobs[candidate_index]}
+        next: validate_candidate
+    - validate_candidate:
+        switch:
+          - condition: '${get_type(candidate) != "map"}'
+            next: no_matching_job
+        next: inspect_candidate_labels
+    - inspect_candidate_labels:
+        assign:
+          - candidate_labels: ${default(map.get(candidate, "labels"), {})}
+    - candidate_matches:
+        switch:
+          - condition: '${get_type(candidate_labels) == "map" and candidate.name == job_name and map.get(candidate_labels, "run_id") == correlation_id and get_type(map.get(candidate, "id")) == "string"}'
+            next: classify_match
+        next: advance_candidate
+    - classify_match:
+        switch:
+          - condition: ${matched_job_id != null}
+            next: record_duplicate
+        next: record_match
+    - record_match:
+        assign:
+          - matched_job_id: ${candidate.id}
+        next: advance_candidate
+    - record_duplicate:
+        assign:
+          - duplicate_match: true
+        next: advance_candidate
+    - advance_candidate:
+        assign:
+          - candidate_index: ${candidate_index + 1}
+        next: search_done
+    - capture_next_page:
+        assign:
+          - next_page_token: ${default(map.get(active_jobs, "nextPageToken"), "")}
+    - validate_next_page:
+        switch:
+          - condition: '${get_type(next_page_token) != "string"}'
+            next: no_matching_job
+    - guard_next_page:
+        switch:
+          - condition: ${sys.now() >= discovery_deadline}
+            next: no_matching_job
+          - condition: ${next_page_token == ""}
+            next: choose_unique_match
+          - condition: ${next_page_token in visited_page_tokens}
+            next: no_matching_job
+          - condition: ${page_count >= 100}
+            next: retry_discovery
+        next: advance_page
+    - advance_page:
+        assign:
+          - page_token: ${next_page_token}
+          - page_count: ${page_count + 1}
+          - visited_page_tokens: ${list.concat(visited_page_tokens, next_page_token)}
+        next: list_active_jobs
+    - choose_unique_match:
+        switch:
+          - condition: ${duplicate_match}
+            next: no_matching_job
+          - condition: ${matched_job_id != null}
+            next: remember_discovered
+        next: retry_discovery
+    - remember_discovered:
+        assign:
+          - job_id: ${matched_job_id}
+        next: inspect_known
+    - retry_discovery:
+        switch:
+          - condition: ${discovery_scan >= 12 or sys.now() >= discovery_deadline}
+            next: no_matching_job
+        next: pause_discovery
+    - pause_discovery:
+        call: sys.sleep
+        args: {seconds: 10}
+        next: advance_discovery
+    - advance_discovery:
+        assign:
+          - discovery_scan: ${discovery_scan + 1}
+        next: init_page_scan
+    - no_matching_job:
+        return: {success: true, final_state: JOB_NOT_FOUND}
+    - inspect_known:
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.get
+        args: {projectId: '${project_id}', location: '${region}', jobId: '${job_id}'}
+        result: job
+    - terminal:
+        switch:
+          - condition: ${job.currentState == "JOB_STATE_DRAINED" or job.currentState == "JOB_STATE_CANCELLED" or job.currentState == "JOB_STATE_FAILED" or job.currentState == "JOB_STATE_DONE"}
+            return: {success: true, final_state: '${job.currentState}'}
+    - cancel:
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.update
+        args:
+          projectId: ${project_id}
+          location: ${region}
+          jobId: ${job_id}
+          body: {requestedState: JOB_STATE_CANCELLED}
+          connector_params: {timeout: 30}
+    - wait_cancelled:
+        call: wait_dataflow_state
+        args: {project_id: '${project_id}', region: '${region}', job_id: '${job_id}', target_state: JOB_STATE_CANCELLED, max_attempts: 120}
+        result: cleanup_result
+    - finish: {return: '${cleanup_result}'}
+
+wait_dataflow_state:
+  params: [project_id, region, job_id, target_state, max_attempts]
+  steps:
+    - init: {assign: [{attempt: 0}, {final_state: JOB_STATE_UNKNOWN}]}
+    - inspect:
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.get
+        args: {projectId: '${project_id}', location: '${region}', jobId: '${job_id}'}
+        result: job
+    - capture: {assign: [{final_state: '${job.currentState}'}]}
+    - decide:
+        switch:
+          - condition: ${final_state == target_state}
+            return: {success: true, final_state: '${final_state}'}
+          - condition: ${final_state == "JOB_STATE_CANCELLED" or final_state == "JOB_STATE_FAILED" or final_state == "JOB_STATE_DRAINED" or final_state == "JOB_STATE_DONE"}
+            return: {success: false, final_state: '${final_state}'}
+          - condition: ${attempt >= max_attempts}
+            return: {success: false, final_state: '${final_state}'}
+    - pause: {call: sys.sleep, args: {seconds: 10}}
+    - increment: {assign: [{attempt: '${attempt + 1}'}], next: inspect}
+
+wait_bigquery_count:
+  params: [project_id, query, expected, correlation_id, window_start, max_attempts]
+  steps:
+    - init: {assign: [{attempt: 0}]}
+    - query_count:
+        call: googleapis.bigquery.v2.jobs.query
+        args:
+          projectId: ${project_id}
+          body:
+            useLegacySql: false
+            query: ${query}
+            parameterMode: NAMED
+            queryParameters:
+              - {name: correlation_id, parameterType: {type: STRING}, parameterValue: {value: '${correlation_id}'}}
+              - {name: window_start, parameterType: {type: TIMESTAMP}, parameterValue: {value: '${window_start}'}}
+        result: count_result
+    - decide:
+        switch:
+          - condition: ${int(count_result.rows[0].f[0].v) == expected}
+            return: {success: true}
+          - condition: ${attempt >= max_attempts}
+            return: {success: false}
+    - pause: {call: sys.sleep, args: {seconds: 10}}
+    - increment: {assign: [{attempt: '${attempt + 1}'}], next: query_count}
+
+wait_gcs_object:
+  params: [bucket, prefix, window_start, max_attempts]
+  steps:
+    - init: {assign: [{attempt: 0}]}
+    - list_objects:
+        call: googleapis.storage.v1.objects.list
+        args: {bucket: '${bucket}', prefix: '${prefix}', maxResults: 1}
+        result: objects
+    - decide:
+        switch:
+          - condition: ${len(default(map.get(objects, "items"), [])) > 0 and objects.items[0].updated >= window_start}
+            return: {success: true}
+          - condition: ${attempt >= max_attempts}
+            return: {success: false}
+    - pause: {call: sys.sleep, args: {seconds: 10}}
+    - increment: {assign: [{attempt: '${attempt + 1}'}], next: list_objects}
