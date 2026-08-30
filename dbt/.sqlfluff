@@ -1,0 +1,14 @@
+[sqlfluff]
+dialect = bigquery
+templater = jinja
+max_line_length = 100
+
+[sqlfluff:templater:jinja]
+load_macros_from_path = lint_macros,macros
+apply_dbt_builtins = True
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower

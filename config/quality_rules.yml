@@ -1,0 +1,103 @@
+version: 1
+catalog: alfabetizacao_release_quality
+defaults:
+  pass_action: promote
+  warning_action: continue_with_alert
+  critical_action: quarantine_and_block
+rules:
+  - id: required_keys
+    scope: silver
+    metric: null_rate
+    pass: "= 0"
+    warning: never
+    critical: "> 0"
+    action: quarantine_and_block
+  - id: uniqueness_after_quarantine
+    scope: silver
+    metric: duplicate_key_rate
+    pass: "= 0"
+    warning: never
+    critical: "> 0"
+    action: quarantine_and_block
+  - id: relationships
+    scope: silver
+    metric: matched_parent_rate
+    pass: "= 100%"
+    warning: never
+    critical: "< 100%"
+    student_parent: [ano, id_municipio, rede]
+    release_scoped: true
+    action: quarantine_and_block
+  - id: gold_core_nulls
+    scope: gold
+    metric: null_rate
+    pass: "= 0"
+    warning: never
+    critical: "> 0"
+    action: block_promotion
+  - id: optional_null_delta
+    scope: silver
+    metric: null_rate_delta_pp
+    pass: "<= 5"
+    warning: "> 5"
+    critical: never
+    action: continue_with_alert
+  - id: percentage_ranges
+    scope: silver
+    metric: out_of_range_rows
+    columns: [taxa_alfabetizacao, percentual_participacao, proporcao_aluno_nivel_0_8]
+    accepted: [0, 100]
+    pass: "= 0"
+    critical: "> 0"
+    action: quarantine_and_block
+  - id: non_negative_measurements
+    scope: silver_restricted
+    metric: negative_rows
+    columns: [proficiencia, peso_aluno]
+    pass: "= 0"
+    critical: "> 0"
+    action: quarantine_and_block
+  - id: proportions_sum
+    scope: silver
+    metric: invalid_rows
+    accepted: [99.5, 100.5]
+    pass: "= 0"
+    critical: "> 0"
+    action: quarantine_and_block
+  - id: repeated_evaluation_or_target_rate
+    scope: release
+    metric: repeated_rate_percent
+    pass: "<= 0.01"
+    warning: "> 0.01 and <= 0.50"
+    critical: "> 0.50"
+    warning_action: continue_with_alert
+    critical_action: quarantine_and_block
+  - id: partition_volume
+    scope: partition
+    metric: drop_percent
+    pass: "<= 20"
+    warning: "> 20 and <= 50"
+    critical: "row_count = 0 or drop_percent > 50"
+    warning_action: continue_with_alert
+    critical_action: block_promotion
+  - id: pipeline_freshness
+    scope: pipeline
+    metric: days_since_success
+    pass: "<= 35"
+    warning: never
+    critical: "> 35"
+    action: block_promotion
+  - id: identical_duplicate
+    scope: silver
+    metric: copies
+    pass: "= 1"
+    warning: "> 1 with one payload hash"
+    critical: never
+    action: deduplicate_and_alert
+  - id: conflicting_duplicate
+    scope: silver
+    metric: payload_variants
+    pass: "= 1"
+    warning: never
+    critical: "> 1"
+    action: quarantine_and_block

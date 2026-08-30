@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: "{{ env_var('GCP_PROJECT_ID', 'local-offline-project') }}"
+    schema: bronze_external
+    tables:
+      - name: uf
+      - name: meta_alfabetizacao_brasil
+      - name: meta_alfabetizacao_uf
+      - name: meta_alfabetizacao_municipio
+      - name: municipio
+      - name: alunos
+  - name: ops
+    database: "{{ env_var('GCP_PROJECT_ID', 'local-offline-project') }}"
+    schema: ops
+    tables:
+      - name: release_files
+      - name: active_release
+      - name: release_registry
+      - name: stream_latest
+      - name: stream_event_audit
+  - name: diretorios
+    database: basedosdados
+    schema: br_bd_diretorios_brasil
+    tables:
+      - name: municipio

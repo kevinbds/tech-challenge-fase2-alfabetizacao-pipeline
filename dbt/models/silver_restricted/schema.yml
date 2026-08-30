@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: silver_alunos
+    description: Dados pseudonimizados de estudantes, restritos e nunca expostos na Gold.
+    tests:
+      - unique_key:
+          arguments: {columns: [release_id, ano, id_municipio, id_escola, id_aluno]}
+      - composite_relationship:
+          arguments:
+            to: ref('silver_municipio')
+            columns: [release_id, ano, id_municipio, rede]
+    columns:
+      - name: id_aluno
+        description: Identificador pseudônimo restrito sujeito à retenção de 365 dias.
+        data_tests: [not_null]
+      - name: proficiencia
+        description: Proficiência em língua portuguesa.
+        data_tests:
+          - accepted_numeric_range:
+              arguments: {minimum: 0, maximum: 1000000}
+      - name: peso_aluno
+        description: Peso amostral não negativo.
+        data_tests:
+          - accepted_numeric_range:
+              arguments: {minimum: 0, maximum: 1000000}

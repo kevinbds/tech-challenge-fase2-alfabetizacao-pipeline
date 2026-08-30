@@ -1,0 +1,129 @@
+version: 2
+
+unit_tests:
+  - name: comparativo_unpivot_escolhe_referencia_e_calcula_gap
+    model: comparativo_meta_resultado
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('indicador_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, date '2024-01-01' ano_particao,
+                 '3550308' id_municipio, 'São Paulo' nome_municipio,
+                 'municipal' rede, 68 taxa_alfabetizacao
+      - input: ref('silver_meta_alfabetizacao_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2023 ano, date '2023-01-01' ano_particao,
+                 '3550308' id_municipio, 'municipal' rede,
+                 65 meta_alfabetizacao_2024, 70 meta_alfabetizacao_2025,
+                 null meta_alfabetizacao_2026, null meta_alfabetizacao_2027,
+                 null meta_alfabetizacao_2028, null meta_alfabetizacao_2029,
+                 null meta_alfabetizacao_2030
+          union all
+          select 'local-release', 2024, date '2024-01-01', '3550308', 'municipal',
+                 67, null, null, null, null, null, null
+      - input: ref('silver_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2023 ano, date '2023-01-01' ano_particao,
+                 'SP' sigla_uf, 'estadual' rede, 69 taxa_alfabetizacao,
+                 72 meta_alfabetizacao_2024, null meta_alfabetizacao_2025,
+                 null meta_alfabetizacao_2026, null meta_alfabetizacao_2027,
+                 null meta_alfabetizacao_2028, null meta_alfabetizacao_2029,
+                 null meta_alfabetizacao_2030
+          union all
+          select 'local-release', 2024, date '2024-01-01', 'SP', 'estadual', 73,
+                 null, null, null, null, null, null, null
+      - input: ref('silver_meta_alfabetizacao_brasil')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2023 ano, date '2023-01-01' ano_particao,
+                 'publica' rede, 68 taxa_alfabetizacao,
+                 71 meta_alfabetizacao_2024, null meta_alfabetizacao_2025,
+                 null meta_alfabetizacao_2026, null meta_alfabetizacao_2027,
+                 null meta_alfabetizacao_2028, null meta_alfabetizacao_2029,
+                 null meta_alfabetizacao_2030
+          union all
+          select 'local-release', 2024, date '2024-01-01', 'publica', 70,
+                 null, null, null, null, null, null, null
+    expect:
+      rows:
+        - {ano_resultado: 2024, nivel_geografico: municipio, id_geografia: '3550308', ano_referencia: 2024, meta_alfabetizacao: 67, taxa_resultado: 68, gap_pp: 1, status_meta: atingida}
+        - {ano_resultado: 2024, nivel_geografico: uf, id_geografia: SP, ano_referencia: 2023, meta_alfabetizacao: 72, taxa_resultado: 73, gap_pp: 1, status_meta: atingida}
+        - {ano_resultado: 2024, nivel_geografico: brasil, id_geografia: BRASIL, ano_referencia: 2023, meta_alfabetizacao: 71, taxa_resultado: 70, gap_pp: -1, status_meta: nao_atingida}
+  - name: indicador_municipio_enriquece_diretorio_e_isola_release
+    model: indicador_municipio
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('silver_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, date '2024-01-01' ano_particao,
+                 '3550308' id_municipio, 'municipal' rede, 68 taxa_alfabetizacao,
+                 null media_portugues,
+                 null proporcao_aluno_nivel_0, null proporcao_aluno_nivel_1,
+                 null proporcao_aluno_nivel_2, null proporcao_aluno_nivel_3,
+                 null proporcao_aluno_nivel_4, null proporcao_aluno_nivel_5,
+                 null proporcao_aluno_nivel_6, null proporcao_aluno_nivel_7,
+                 null proporcao_aluno_nivel_8
+          union all
+          select 'outro-release', 2024, date '2024-01-01', '3550308', 'municipal', 10,
+                 null, null, null, null, null, null, null, null, null, null
+      - input: source('diretorios', 'municipio')
+        format: sql
+        rows: "select '3550308' id_municipio, 'São Paulo' nome, 'SP' sigla_uf"
+    expect:
+      rows:
+        - {release_id: local-release, ano: 2024, id_municipio: '3550308', nome_municipio: São Paulo, sigla_uf: SP, rede: municipal, taxa_alfabetizacao: 68}
+  - name: evolucao_calcula_lag_exato
+    model: evolucao_alfabetizacao
+    given:
+      - input: ref('indicador_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2023 ano, date '2023-01-01' ano_particao,
+                 '3550308' id_municipio, 'municipal' rede, 60 taxa_alfabetizacao
+          union all
+          select 'local-release', 2024, date '2024-01-01', '3550308', 'municipal', 68
+    expect:
+      rows:
+        - {release_id: local-release, ano: 2023, id_municipio: '3550308', rede: municipal, taxa_alfabetizacao: 60, taxa_ano_anterior: null, variacao_pp: null}
+        - {release_id: local-release, ano: 2024, id_municipio: '3550308', rede: municipal, taxa_alfabetizacao: 68, taxa_ano_anterior: 60, variacao_pp: 8}
+  - name: overlay_ignora_evento_tardio_e_desempata_publicacao
+    model: indicador_atual_hibrido
+    given:
+      - input: ref('indicador_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, date '2024-01-01' ano_particao,
+                 '3550308' id_municipio, 'São Paulo' nome_municipio, 'SP' sigla_uf,
+                 'municipal' rede, 68 taxa_alfabetizacao
+      - input: source('ops', 'active_release')
+        format: sql
+        rows: |
+          select true singleton_key, 'local-release' release_id,
+                 timestamp '2024-06-01 00:00:00' promoted_at
+      - input: source('ops', 'stream_latest')
+        format: sql
+        rows: |
+          select 'old' event_id, 2024 ano, '3550308' id_municipio, 'municipal' rede,
+                 66 taxa_alfabetizacao, null percentual_participacao, true simulation,
+                 timestamp '2024-05-31 00:00:00' event_time,
+                 timestamp '2024-05-31 00:00:01' publish_time,
+                 timestamp '2024-05-31 00:00:02' ingestion_time
+          union all
+          select 'a', 2024, '3550308', 'municipal', 71, null, true,
+                 timestamp '2024-06-02 00:00:00', timestamp '2024-06-02 00:00:01',
+                 timestamp '2024-06-02 00:00:02'
+          union all
+          select 'z', 2024, '3550308', 'municipal', 72, null, true,
+                 timestamp '2024-06-02 00:00:00', timestamp '2024-06-02 00:00:02',
+                 timestamp '2024-06-02 00:00:03'
+    expect:
+      rows:
+        - {release_id: local-release, ano: 2024, id_municipio: '3550308', rede: municipal, taxa_alfabetizacao: 72, origem: stream_simulacao}

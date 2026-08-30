@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: stg_uf
+    description: Snapshot estadual Bronze selecionado por URI exata no manifesto do release.
+    columns:
+      - {name: ano, description: Ano da avaliação, data_tests: [not_null]}
+      - {name: sigla_uf, description: Sigla da unidade federativa, data_tests: [not_null]}
+      - {name: rede, description: Rede de ensino normalizada, data_tests: [not_null]}
+  - name: stg_municipio
+    description: Snapshot municipal Bronze selecionado por URI exata no manifesto do release.
+    columns:
+      - {name: ano, description: Ano da avaliação, data_tests: [not_null]}
+      - {name: id_municipio, description: Código IBGE de sete dígitos, data_tests: [not_null]}
+      - {name: rede, description: Rede de ensino normalizada, data_tests: [not_null]}
+  - name: stg_meta_alfabetizacao_brasil
+    description: Resultados e metas nacionais normalizados para NUMERIC.
+  - name: stg_meta_alfabetizacao_uf
+    description: Resultados e metas estaduais normalizados para NUMERIC.
+  - name: stg_meta_alfabetizacao_municipio
+    description: Resultados, nível e metas municipais normalizados.
+  - name: stg_alunos
+    description: Dados individuais pseudonimizados restritos desde o staging.
+    columns:
+      - {name: id_aluno, description: Identificador pseudônimo restrito, data_tests: [not_null]}

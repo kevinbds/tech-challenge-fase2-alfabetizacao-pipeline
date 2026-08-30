@@ -1,0 +1,60 @@
+version: 2
+
+models:
+  - name: silver_municipio
+    description: Indicadores municipais normalizados e deduplicados por release.
+    tests:
+      - unique_key:
+          arguments:
+            columns: [release_id, ano, id_municipio, rede]
+      - proportions_total:
+          arguments:
+            columns:
+              - proporcao_aluno_nivel_0
+              - proporcao_aluno_nivel_1
+              - proporcao_aluno_nivel_2
+              - proporcao_aluno_nivel_3
+              - proporcao_aluno_nivel_4
+              - proporcao_aluno_nivel_5
+              - proporcao_aluno_nivel_6
+              - proporcao_aluno_nivel_7
+              - proporcao_aluno_nivel_8
+    columns:
+      - name: release_id
+        description: Identificador imutável do release candidato.
+        data_tests: [not_null]
+      - name: ano
+        description: Ano da avaliação.
+        data_tests: [not_null]
+      - name: id_municipio
+        description: Código IBGE de sete dígitos.
+        data_tests: [not_null]
+      - name: rede
+        description: Rede de ensino normalizada.
+        data_tests: [not_null]
+      - name: taxa_alfabetizacao
+        description: Percentual de alunos alfabetizados.
+        data_tests:
+          - not_null
+          - accepted_numeric_range:
+              arguments: {minimum: 0, maximum: 100}
+  - name: silver_uf
+    description: Indicadores estaduais normalizados por release.
+    tests:
+      - unique_key:
+          arguments: {columns: [release_id, ano, sigla_uf, rede]}
+  - name: silver_meta_alfabetizacao_municipio
+    description: Resultados e metas municipais de 2024 a 2030.
+    tests:
+      - unique_key:
+          arguments: {columns: [release_id, ano, id_municipio, rede]}
+  - name: silver_meta_alfabetizacao_uf
+    description: Resultados e metas estaduais de 2024 a 2030.
+    tests:
+      - unique_key:
+          arguments: {columns: [release_id, ano, sigla_uf, rede]}
+  - name: silver_meta_alfabetizacao_brasil
+    description: Resultados e metas nacionais de 2024 a 2030.
+    tests:
+      - unique_key:
+          arguments: {columns: [release_id, ano, rede]}
