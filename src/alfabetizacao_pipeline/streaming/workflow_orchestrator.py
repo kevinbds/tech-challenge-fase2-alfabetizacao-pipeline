@@ -8,6 +8,7 @@ class FailurePoint(StrEnum):
     """Etapas em que o simulador pode injetar uma falha determinística."""
 
     NONE = "none"
+    LAUNCH_AFTER_CREATE = "launch_after_create"
     PRODUCER = "producer"
     STAGE = "stage"
     RAW_STALE = "raw_stale"
@@ -69,6 +70,19 @@ class WorkflowPort(Protocol):
         """Exponha o estado atual."""
         ...
 
+    @property
+    def job_id_known(self) -> bool:
+        """Exponha se o launch retornou o identificador."""
+        ...
+
+    def launch(self) -> None:
+        """Execute o launch guardado."""
+        ...
+
+    def discover_job(self) -> None:
+        """Resolva um launch ambíguo por correlação exata."""
+        ...
+
     def ensure_step(self, step: FailurePoint) -> None:
         """Execute uma etapa verificável."""
         ...
@@ -92,17 +106,21 @@ class InMemoryWorkflowPort:
     __slots__: ClassVar[tuple[str, ...]] = (
         "cancel_requested",
         "cleanup_waited",
+        "discovery_requested",
         "drain_requested",
         "fail_cleanup",
         "failure",
         "final_state",
+        "job_id_known",
     )
     failure: FailurePoint
     final_state: WorkflowJobState
     cancel_requested: bool
     drain_requested: bool
+    discovery_requested: bool
     cleanup_waited: bool
     fail_cleanup: bool
+    job_id_known: bool
 
     def __init__(
         self,
@@ -115,8 +133,23 @@ class InMemoryWorkflowPort:
         self.final_state = WorkflowJobState.RUNNING
         self.cancel_requested = False
         self.drain_requested = False
+        self.discovery_requested = False
         self.cleanup_waited = False
         self.fail_cleanup = fail_cleanup
+        self.job_id_known = True
+
+    def launch(self) -> None:
+        """Simule inclusive timeout ocorrido após a criação remota."""
+        if self.failure is FailurePoint.LAUNCH_AFTER_CREATE:
+            self.job_id_known = False
+            raise WorkflowExecutionError(FailurePoint.LAUNCH_AFTER_CREATE)
+
+    def discover_job(self) -> None:
+        """Registre a recuperação do job criado sem resposta completa."""
+        self.discovery_requested = True
+        if self.fail_cleanup:
+            raise WorkflowCleanupError
+        self.job_id_known = True
 
     def ensure_step(self, step: FailurePoint) -> None:
         """Execute uma etapa ou injete a falha selecionada."""
@@ -145,6 +178,7 @@ class InMemoryWorkflowPort:
 def run_guarded_workflow(port: WorkflowPort) -> WorkflowResult:
     """Executa o caminho feliz e garante terminalidade antes de propagar falhas."""
     try:
+        port.launch()
         port.ensure_step(FailurePoint.PRODUCER)
         port.ensure_step(FailurePoint.STAGE)
         port.ensure_step(FailurePoint.RAW_STALE)
@@ -154,6 +188,8 @@ def run_guarded_workflow(port: WorkflowPort) -> WorkflowResult:
         port.ensure_step(FailurePoint.BACKLOG)
     except WorkflowExecutionError:
         try:
+            if not port.job_id_known:
+                port.discover_job()
             if not port.final_state.is_terminal:
                 port.request_cancel()
             port.wait_terminal()

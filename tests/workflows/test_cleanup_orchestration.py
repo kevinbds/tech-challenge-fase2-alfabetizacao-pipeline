@@ -16,7 +16,12 @@ except WorkflowExecutionError:
     result = None
 assert port.final_state.is_terminal
 assert port.cleanup_waited
-if failure in {FailurePoint.PRODUCER, FailurePoint.STAGE, FailurePoint.RAW_STALE}:
+if failure in {
+    FailurePoint.LAUNCH_AFTER_CREATE,
+    FailurePoint.PRODUCER,
+    FailurePoint.STAGE,
+    FailurePoint.RAW_STALE,
+}:
     assert port.cancel_requested
 else:
     assert port.drain_requested
@@ -24,12 +29,32 @@ if failure is FailurePoint.NONE:
     assert result is not None and result.success and port.final_state.value == "DRAINED"
 else:
     assert result is None
+if failure is FailurePoint.LAUNCH_AFTER_CREATE:
+    assert port.discovery_requested
+"""
+
+DISCOVERY_FAILURE_PROGRAM = """
+from alfabetizacao_pipeline.streaming.workflow_orchestrator import (
+    FailurePoint, InMemoryWorkflowPort, WorkflowExecutionError, run_guarded_workflow
+)
+port = InMemoryWorkflowPort(
+    failure=FailurePoint.LAUNCH_AFTER_CREATE,
+    fail_cleanup=True,
+)
+try:
+    run_guarded_workflow(port)
+except WorkflowExecutionError as error:
+    assert error.failure is FailurePoint.LAUNCH_AFTER_CREATE
+else:
+    raise AssertionError("primary launch error was masked")
+assert port.discovery_requested
+assert not port.job_id_known
 """
 
 
 @pytest.mark.parametrize(
     "failure",
-    ["producer", "stage", "raw_stale", "merge", "backlog", "none"],
+    ["launch_after_create", "producer", "stage", "raw_stale", "merge", "backlog", "none"],
 )
 def test_every_path_reaches_terminal_cleanup(failure: str) -> None:
     # Given a launched workflow with success or one injected failure
@@ -64,4 +89,18 @@ def test_cleanup_failure_does_not_mask_primary_error() -> None:
     )
 
     # Then cancellation is terminal and the cleanup error never masks the cause
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_discovery_failure_does_not_mask_ambiguous_launch_error() -> None:
+    # Given a post-creation timeout followed by discovery failure
+    # When guarded orchestration executes the ambiguous cleanup path
+    completed = subprocess.run(
+        [sys.executable, "-c", DISCOVERY_FAILURE_PROGRAM],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    # Then the original launch error remains observable
     assert completed.returncode == 0, completed.stderr

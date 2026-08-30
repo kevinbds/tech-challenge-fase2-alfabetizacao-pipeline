@@ -9,35 +9,35 @@ main:
           - correlation_id: ${job_name}
           - window_start: ${time.format(sys.now())}
           - dataflow_job_id: null
-    - launch_flex:
-        call: googleapis.dataflow.v1b3.projects.locations.flexTemplates.launch
-        args:
-          projectId: ${project_id}
-          location: ${region}
-          body:
-            launchParameter:
-              jobName: ${job_name}
-              containerSpecGcsPath: ${args.flex_template_spec_gcs_uri}
-              parameters:
-                input_subscription: ${args.dataflow_subscription}
-                valid_table: ${args.valid_staging_table}
-                quarantine_table: ${args.quarantine_table}
-                write_method: STORAGE_API_AT_LEAST_ONCE
-              environment:
-                serviceAccountEmail: ${args.dataflow_service_account}
-                tempLocation: ${args.temp_location}
-                stagingLocation: ${args.staging_location}
-                numWorkers: 1
-                maxWorkers: 2
-                additionalExperiments: [enable_portable_runner]
-                additionalUserLabels: {run_id: '${correlation_id}'}
-        result: launch_result
-    - remember_job:
-        assign:
-          - dataflow_job_id: ${launch_result.job.id}
     - guarded_execution:
         try:
           steps:
+            - launch_flex:
+                call: googleapis.dataflow.v1b3.projects.locations.flexTemplates.launch
+                args:
+                  projectId: ${project_id}
+                  location: ${region}
+                  body:
+                    launchParameter:
+                      jobName: ${job_name}
+                      containerSpecGcsPath: ${args.flex_template_spec_gcs_uri}
+                      parameters:
+                        input_subscription: ${args.dataflow_subscription}
+                        valid_table: ${args.valid_staging_table}
+                        quarantine_table: ${args.quarantine_table}
+                        write_method: STORAGE_API_AT_LEAST_ONCE
+                      environment:
+                        serviceAccountEmail: ${args.dataflow_service_account}
+                        tempLocation: ${args.temp_location}
+                        stagingLocation: ${args.staging_location}
+                        numWorkers: 1
+                        maxWorkers: 2
+                        additionalExperiments: [enable_portable_runner]
+                        additionalUserLabels: {run_id: '${correlation_id}'}
+                result: launch_result
+            - remember_job:
+                assign:
+                  - dataflow_job_id: ${launch_result.job.id}
             - wait_running:
                 call: wait_dataflow_state
                 args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', target_state: JOB_STATE_RUNNING, max_attempts: 90}
@@ -133,7 +133,7 @@ main:
             - cleanup_after_failure:
                 try:
                   call: cleanup_dataflow
-                  args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}'}
+                  args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', job_name: '${job_name}', correlation_id: '${correlation_id}'}
                 except:
                   as: cleanup_error
                   steps:
@@ -148,9 +148,63 @@ main:
         return: {dataflow_job_id: '${dataflow_job_id}', correlation_id: '${correlation_id}', final_state: '${drained_result.final_state}', success: true}
 
 cleanup_dataflow:
-  params: [project_id, region, job_id]
+  params: [project_id, region, job_id, job_name, correlation_id]
   steps:
-    - inspect:
+    - route_by_id:
+        switch:
+          - condition: ${job_id != null}
+            next: inspect_known
+        next: init_discovery
+    - init_discovery:
+        assign:
+          - discovery_attempt: 0
+    - list_active_jobs:
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.list
+        args:
+          projectId: ${project_id}
+          location: ${region}
+          filter: ACTIVE
+          pageSize: 100
+        result: active_jobs
+    - init_search:
+        assign:
+          - candidate_index: 0
+          - candidate_count: ${len(default(map.get(active_jobs, "jobs"), []))}
+    - search_done:
+        switch:
+          - condition: ${candidate_index >= candidate_count}
+            next: retry_discovery
+    - inspect_candidate:
+        assign:
+          - candidate: ${active_jobs.jobs[candidate_index]}
+          - candidate_labels: ${default(map.get(candidate, "labels"), {})}
+    - candidate_matches:
+        switch:
+          - condition: ${candidate.name == job_name and map.get(candidate_labels, "run_id") == correlation_id}
+            next: remember_discovered
+    - advance_candidate:
+        assign:
+          - candidate_index: ${candidate_index + 1}
+        next: search_done
+    - remember_discovered:
+        assign:
+          - job_id: ${candidate.id}
+        next: inspect_known
+    - retry_discovery:
+        switch:
+          - condition: ${discovery_attempt >= 12}
+            next: no_matching_job
+        next: pause_discovery
+    - pause_discovery:
+        call: sys.sleep
+        args: {seconds: 10}
+    - advance_discovery:
+        assign:
+          - discovery_attempt: ${discovery_attempt + 1}
+        next: list_active_jobs
+    - no_matching_job:
+        return: {success: true, final_state: JOB_NOT_FOUND}
+    - inspect_known:
         call: googleapis.dataflow.v1b3.projects.locations.jobs.get
         args: {projectId: '${project_id}', location: '${region}', jobId: '${job_id}'}
         result: job
