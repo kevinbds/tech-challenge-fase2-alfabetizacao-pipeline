@@ -26,6 +26,7 @@ def materialize_dbt_model(
         sql,
     )
     sql = re.sub(r"\{\{\s*ref\('([a-z_]+)'\)\s*\}\}", r"\1", sql)
+    sql = re.sub(r"\{\{\s*source\('ops',\s*'([a-z_]+)'\)\s*\}\}", r"\1", sql)
     translated = translate_bigquery_sql(sql, parameters)
     create_table = "create or replace table"
     statement = f"{create_table} {target_table} as {translated}"

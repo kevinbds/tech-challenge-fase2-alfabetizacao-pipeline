@@ -13,7 +13,7 @@ with range_rows as (
         or proporcao_aluno_nivel_7 is null or proporcao_aluno_nivel_7 not between 0 and 100
         or proporcao_aluno_nivel_8 is null
         or proporcao_aluno_nivel_8 not between 0 and 100 as invalid
-    from `{{ var("project_id") }}.silver.silver_municipio`
+    from {{ ref('silver_municipio') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -27,7 +27,7 @@ with range_rows as (
         or proporcao_aluno_nivel_6 is null or proporcao_aluno_nivel_6 not between 0 and 100
         or proporcao_aluno_nivel_7 is null or proporcao_aluno_nivel_7 not between 0 and 100
         or proporcao_aluno_nivel_8 is null or proporcao_aluno_nivel_8 not between 0 and 100
-    from `{{ var("project_id") }}.silver.silver_uf`
+    from {{ ref('silver_uf') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -40,7 +40,7 @@ with range_rows as (
         or meta_alfabetizacao_2028 not between 0 and 100
         or meta_alfabetizacao_2029 not between 0 and 100
         or meta_alfabetizacao_2030 not between 0 and 100
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_municipio`
+    from {{ ref('silver_meta_alfabetizacao_municipio') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -53,7 +53,7 @@ with range_rows as (
         or meta_alfabetizacao_2028 not between 0 and 100
         or meta_alfabetizacao_2029 not between 0 and 100
         or meta_alfabetizacao_2030 not between 0 and 100
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_uf`
+    from {{ ref('silver_meta_alfabetizacao_uf') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -66,7 +66,7 @@ with range_rows as (
         or meta_alfabetizacao_2028 not between 0 and 100
         or meta_alfabetizacao_2029 not between 0 and 100
         or meta_alfabetizacao_2030 not between 0 and 100
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_brasil`
+    from {{ ref('silver_meta_alfabetizacao_brasil') }}
     where release_id = '{{ var("release_id") }}'
 ),
 
@@ -88,7 +88,7 @@ proportion_rows as (
             + proporcao_aluno_nivel_6 + proporcao_aluno_nivel_7
             + proporcao_aluno_nivel_8 - 100
         ) > 0.5 as invalid
-    from `{{ var("project_id") }}.silver.silver_municipio`
+    from {{ ref('silver_municipio') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -108,7 +108,7 @@ proportion_rows as (
             + proporcao_aluno_nivel_6 + proporcao_aluno_nivel_7
             + proporcao_aluno_nivel_8 - 100
         ) > 0.5
-    from `{{ var("project_id") }}.silver.silver_uf`
+    from {{ ref('silver_uf') }}
     where release_id = '{{ var("release_id") }}'
 ),
 

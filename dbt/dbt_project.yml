@@ -14,7 +14,6 @@ clean-targets: [target, dbt_packages, logs]
 
 vars:
   release_id: local-release
-  project_id: local
 
 models:
   alfabetizacao_medallion:

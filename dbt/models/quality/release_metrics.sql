@@ -7,7 +7,7 @@ with silver_keys as (
         id_municipio as geography_id,
         rede,
         cast(null as string) as extra_id
-    from `{{ var("project_id") }}.silver.silver_municipio`
+    from {{ ref('silver_municipio') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -16,7 +16,7 @@ with silver_keys as (
         sigla_uf as geography_id,
         rede,
         cast(null as string) as extra_id
-    from `{{ var("project_id") }}.silver.silver_uf`
+    from {{ ref('silver_uf') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -25,7 +25,7 @@ with silver_keys as (
         id_municipio as geography_id,
         rede,
         cast(null as string) as extra_id
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_municipio`
+    from {{ ref('silver_meta_alfabetizacao_municipio') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -34,7 +34,7 @@ with silver_keys as (
         sigla_uf as geography_id,
         rede,
         cast(null as string) as extra_id
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_uf`
+    from {{ ref('silver_meta_alfabetizacao_uf') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -43,7 +43,7 @@ with silver_keys as (
         'BRASIL' as geography_id,
         rede,
         cast(null as string) as extra_id
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_brasil`
+    from {{ ref('silver_meta_alfabetizacao_brasil') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -52,7 +52,7 @@ with silver_keys as (
         id_municipio as geography_id,
         rede,
         id_escola || '|' || id_aluno as extra_id
-    from `{{ var("project_id") }}.silver_restricted.silver_alunos`
+    from {{ ref('silver_alunos') }}
     where release_id = '{{ var("release_id") }}'
 ),
 
@@ -86,8 +86,8 @@ relationships as (
     select
         count(*) as student_count,
         countif(m.id_municipio is null) as orphan_count
-    from `{{ var("project_id") }}.silver_restricted.silver_alunos` as a
-    left join `{{ var("project_id") }}.silver.silver_municipio` as m
+    from {{ ref('silver_alunos') }} as a
+    left join {{ ref('silver_municipio') }} as m
         on
             a.release_id = m.release_id
             and a.ano = m.ano
@@ -101,14 +101,14 @@ gold_core_rows as (
         ano is null or id_municipio is null or rede is null
         or taxa_alfabetizacao is null or nome_municipio is null
         or sigla_uf is null as invalid
-    from `{{ var("project_id") }}.gold.indicador_municipio`
+    from {{ ref('indicador_municipio') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
         ano_resultado is null or nivel_geografico is null
         or id_geografia is null or rede is null or taxa_resultado is null
         or meta_alfabetizacao is null
-    from `{{ var("project_id") }}.gold.comparativo_meta_resultado`
+    from {{ ref('comparativo_meta_resultado') }}
     where release_id = '{{ var("release_id") }}'
 ),
 
@@ -127,8 +127,8 @@ optional_rates as (
         countif(m.release_id = active.release_id) as baseline_rows,
         countif(m.release_id = active.release_id and m.media_portugues is null)
             as baseline_nulls
-    from `{{ var("project_id") }}.silver.silver_municipio` as m
-    cross join `{{ var("project_id") }}.ops.active_release` as active
+    from {{ ref('silver_municipio') }} as m
+    cross join {{ source('ops', 'active_release') }} as active
     where active.singleton_key = true
 ),
 
@@ -155,7 +155,7 @@ measurement_violations as (
             or proporcao_aluno_nivel_6 < 0 or proporcao_aluno_nivel_7 < 0
             or proporcao_aluno_nivel_8 < 0
         ) as invalid_count
-    from `{{ var("project_id") }}.silver.silver_municipio`
+    from {{ ref('silver_municipio') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -167,11 +167,11 @@ measurement_violations as (
             or proporcao_aluno_nivel_6 < 0 or proporcao_aluno_nivel_7 < 0
             or proporcao_aluno_nivel_8 < 0
         ) as invalid_count
-    from `{{ var("project_id") }}.silver.silver_uf`
+    from {{ ref('silver_uf') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select countif(proficiencia < 0 or peso_aluno < 0) as invalid_count
-    from `{{ var("project_id") }}.silver_restricted.silver_alunos`
+    from {{ ref('silver_alunos') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -182,7 +182,7 @@ measurement_violations as (
             or meta_alfabetizacao_2028 < 0 or meta_alfabetizacao_2029 < 0
             or meta_alfabetizacao_2030 < 0
         ) as invalid_count
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_municipio`
+    from {{ ref('silver_meta_alfabetizacao_municipio') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -193,7 +193,7 @@ measurement_violations as (
             or meta_alfabetizacao_2028 < 0 or meta_alfabetizacao_2029 < 0
             or meta_alfabetizacao_2030 < 0
         ) as invalid_count
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_uf`
+    from {{ ref('silver_meta_alfabetizacao_uf') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -204,13 +204,13 @@ measurement_violations as (
             or meta_alfabetizacao_2028 < 0 or meta_alfabetizacao_2029 < 0
             or meta_alfabetizacao_2030 < 0
         ) as invalid_count
-    from `{{ var("project_id") }}.silver.silver_meta_alfabetizacao_brasil`
+    from {{ ref('silver_meta_alfabetizacao_brasil') }}
     where release_id = '{{ var("release_id") }}'
 ),
 
 repeated_keys as (
     select count(*) as copies
-    from `{{ var("project_id") }}.staging.stg_alunos`
+    from {{ ref('stg_alunos') }}
     where release_id = '{{ var("release_id") }}'
     group by ano, id_municipio, id_escola, id_aluno
 ),
@@ -224,7 +224,7 @@ repeated_metric as (
 
 active_pointer as (
     select active.release_id
-    from `{{ var("project_id") }}.ops.active_release` as active
+    from {{ source('ops', 'active_release') }} as active
     where active.singleton_key = true
 ),
 
@@ -232,7 +232,7 @@ target_partition_counts as (
     select
         ano,
         count(*) as row_count
-    from `{{ var("project_id") }}.silver.silver_municipio`
+    from {{ ref('silver_municipio') }}
     where release_id = '{{ var("release_id") }}'
     group by ano
 ),
@@ -241,7 +241,7 @@ baseline_partition_counts as (
     select
         baseline.ano,
         count(*) as row_count
-    from `{{ var("project_id") }}.silver.silver_municipio` as baseline
+    from {{ ref('silver_municipio') }} as baseline
     cross join active_pointer
     where baseline.release_id = active_pointer.release_id
     group by baseline.ano
@@ -276,7 +276,7 @@ volume_metric as (
 
 freshness as (
     select date_diff(current_date(), date(completed_at), day) as days_since_success
-    from `{{ var("project_id") }}.ops.release_registry`
+    from {{ source('ops', 'release_registry') }}
     where release_id = '{{ var("release_id") }}' and status = 'succeeded'
 ),
 
@@ -394,7 +394,7 @@ rule_metrics as (
         if(coalesce(sum(copies - 1), 0) = 0, 'pass', 'warning') as severity,
         if(coalesce(sum(copies - 1), 0) = 0, 'promote', 'deduplicate_and_alert') as action,
         'audit_identical_duplicates_excess_copies' as details
-    from `{{ var("project_id") }}.quality.audit_identical_duplicates`
+    from {{ ref('audit_identical_duplicates') }}
     where release_id = '{{ var("release_id") }}'
     union all
     select
@@ -403,7 +403,7 @@ rule_metrics as (
         if(count(distinct business_key_hash) = 0, 'pass', 'critical') as severity,
         if(count(distinct business_key_hash) = 0, 'promote', 'quarantine_and_block') as action,
         'quarantine_conflicting_business_keys' as details
-    from `{{ var("project_id") }}.quality.quarantine_conflicting_duplicates`
+    from {{ ref('quarantine_conflicting_duplicates') }}
     where release_id = '{{ var("release_id") }}'
 )
 
