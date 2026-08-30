@@ -29,10 +29,14 @@ def promotion_sql(table: str) -> str:
 def rollback_sql(table: str) -> str:
     """Build DML-only rollback that swaps active and previous pointers."""
     quoted = _quoted_table(table)
-    return "\n".join(
+    rollback = "\n".join(
         (
             "BEGIN TRANSACTION;",
             _assert_singleton(table),
+            (
+                "ASSERT (SELECT previous_release_id IS NOT NULL FROM TABLE_NAME "
+                "WHERE singleton_key = TRUE);"
+            ),
             "UPDATE " + quoted,
             "SET active_release_id = previous_release_id,",
             "    previous_release_id = active_release_id,",
@@ -41,6 +45,7 @@ def rollback_sql(table: str) -> str:
             "COMMIT TRANSACTION;",
         )
     )
+    return rollback.replace("TABLE_NAME", quoted)
 
 
 def _quoted_table(table: str) -> str:

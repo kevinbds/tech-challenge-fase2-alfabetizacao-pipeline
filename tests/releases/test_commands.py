@@ -54,3 +54,22 @@ def test_release_mutation_commands_are_dry_run_only_without_cloud_authorization(
     assert dry_run.exit_code == 0
     assert "@candidate_release_id" in dry_run.stdout
     assert execute.exit_code == 5
+
+
+def test_promotion_and_rollback_reject_missing_release_identifiers() -> None:
+    # Given: blank promotion and missing rollback identifiers
+    runner = CliRunner()
+    # When: invalid identifiers cross the CLI boundary
+    promotion = runner.invoke(
+        app,
+        ["promote", "--release-id", "", "--table", "project.ops.active_release"],
+    )
+    rollback = runner.invoke(
+        app,
+        ["rollback", "--active-release-id", "active", "--previous-release-id", ""],
+    )
+    # Then: neither command renders executable SQL
+    assert promotion.exit_code == 2
+    assert rollback.exit_code == 2
+    assert "UPDATE" not in promotion.stdout
+    assert "UPDATE" not in rollback.stdout

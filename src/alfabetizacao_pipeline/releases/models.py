@@ -1,7 +1,9 @@
 from datetime import datetime
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
+
+ReleaseId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class ReleasePartition(BaseModel):
@@ -11,7 +13,7 @@ class ReleasePartition(BaseModel):
 
     source: str
     year: int
-    run_id: str
+    run_id: ReleaseId
     manifest_uri: str
 
 
@@ -20,7 +22,7 @@ class Release(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
-    release_id: str
+    release_id: ReleaseId
     created_at: datetime
     partitions: tuple[ReleasePartition, ...]
 
@@ -31,5 +33,5 @@ class ActiveRelease(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     singleton_key: bool = True
-    active_release_id: str
-    previous_release_id: str | None
+    active_release_id: ReleaseId
+    previous_release_id: ReleaseId | None

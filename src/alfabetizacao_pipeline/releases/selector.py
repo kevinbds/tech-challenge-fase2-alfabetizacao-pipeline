@@ -28,6 +28,8 @@ def select_latest_completed(
         )
         for (source, year), manifest in sorted(selected.items())
     )
+    if not partitions:
+        raise IncompleteRunError(run_id="release-without-completed-runs")
     return Release(release_id=release_id, created_at=created_at, partitions=partitions)
 
 

@@ -12,6 +12,13 @@ from alfabetizacao_pipeline.releases.sql import promotion_sql, rollback_sql
 app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 
 
+def _required_identifier(value: str | None) -> str:
+    if value is None or not value.strip():
+        typer.echo('{"status":"invalid_release_id"}', err=True)
+        raise typer.Exit(code=2)
+    return value
+
+
 @app.command("select")
 def select(
     manifests: Annotated[Path, typer.Option("--manifests")],
@@ -34,10 +41,10 @@ def promote(
     dry_run: Annotated[bool, typer.Option("--dry-run/--execute")] = True,
 ) -> None:
     """Render parameterized promotion SQL without executing cloud DML."""
+    _ = _required_identifier(release_id)
     if not dry_run:
         typer.echo('{"status":"cloud_authorization_required"}', err=True)
         raise typer.Exit(code=5)
-    del release_id
     typer.echo(promotion_sql(table))
 
 
@@ -49,10 +56,11 @@ def rollback(
     dry_run: Annotated[bool, typer.Option("--dry-run/--execute")] = True,
 ) -> None:
     """Render transactional pointer rollback SQL without cloud execution."""
+    _ = _required_identifier(active_release_id)
+    _ = _required_identifier(previous_release_id)
     if not dry_run:
         typer.echo('{"status":"cloud_authorization_required"}', err=True)
         raise typer.Exit(code=5)
-    del active_release_id, previous_release_id
     typer.echo(rollback_sql(table))
 
 
