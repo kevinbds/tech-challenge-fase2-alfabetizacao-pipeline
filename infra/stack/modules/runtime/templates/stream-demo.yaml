@@ -8,10 +8,10 @@ main:
           - correlation_id: $${uuid.generate()}
           - raw_start_offset: '$${"raw/year=" + text.substring(run_started_text, 0, 4) + "/month=" + text.substring(run_started_text, 5, 7) + "/day=" + text.substring(run_started_text, 8, 10) + "/hour=" + text.substring(run_started_text, 11, 13) + "/" + text.substring(run_started_text, 14, 16) + "_"}'
     - launch_dataflow:
-        call: http.post
+        call: googleapis.dataflow.v1b3.projects.locations.flexTemplates.launch
         args:
-          url: https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/flexTemplates:launch
-          auth: { type: OAuth2 }
+          projectId: ${project_id}
+          location: ${region}
           body:
             launchParameter:
               jobName: $${"fiap-stream-demo-" + correlation_id}
@@ -31,7 +31,7 @@ main:
         result: launched
     - remember_job:
         assign:
-          - job_id: $${launched.body.job.id}
+          - job_id: $${launched.job.id}
     - guarded_demo:
         try:
           call: execute_demo
@@ -47,10 +47,11 @@ main:
           steps:
             - cancel_dataflow:
                 try:
-                  call: http.put
+                  call: googleapis.dataflow.v1b3.projects.locations.jobs.update
                   args:
-                    url: $${"https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/jobs/" + job_id}
-                    auth: { type: OAuth2 }
+                    projectId: ${project_id}
+                    location: ${region}
+                    jobId: $${job_id}
                     body: { requestedState: JOB_STATE_CANCELLED }
                 except:
                   as: cleanup_error
@@ -72,16 +73,17 @@ execute_demo:
         assign:
           - running_deadline: $${sys.now() + 900}
     - poll_running:
-        call: http.get
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.get
         args:
-          url: $${"https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/jobs/" + job_id}
-          auth: { type: OAuth2 }
+          projectId: ${project_id}
+          location: ${region}
+          jobId: $${job_id}
         result: job
     - running_state:
         switch:
-          - condition: $${job.body.currentState == "JOB_STATE_RUNNING"}
+          - condition: $${job.currentState == "JOB_STATE_RUNNING"}
             next: publish_fixture
-          - condition: $${job.body.currentState in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED"] || sys.now() >= running_deadline}
+          - condition: $${job.currentState in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED"] || sys.now() >= running_deadline}
             raise: "Dataflow não atingiu RUNNING em 15 minutos"
         next: running_sleep
     - running_sleep:
@@ -159,25 +161,27 @@ execute_demo:
         args: { seconds: 15 }
         next: poll_stream_result
     - request_drain:
-        call: http.put
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.update
         args:
-          url: $${"https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/jobs/" + job_id}
-          auth: { type: OAuth2 }
+          projectId: ${project_id}
+          location: ${region}
+          jobId: $${job_id}
           body: { requestedState: JOB_STATE_DRAINED }
     - drain_deadline:
         assign:
           - drain_by: $${sys.now() + 1200}
     - poll_drained:
-        call: http.get
+        call: googleapis.dataflow.v1b3.projects.locations.jobs.get
         args:
-          url: $${"https://dataflow.googleapis.com/v1b3/projects/${project_id}/locations/${region}/jobs/" + job_id}
-          auth: { type: OAuth2 }
+          projectId: ${project_id}
+          location: ${region}
+          jobId: $${job_id}
         result: drained
     - drained_state:
         switch:
-          - condition: $${drained.body.currentState == "JOB_STATE_DRAINED"}
+          - condition: $${drained.currentState == "JOB_STATE_DRAINED"}
             next: merge_and_test
-          - condition: $${drained.body.currentState in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED"] || sys.now() >= drain_by}
+          - condition: $${drained.currentState in ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED"] || sys.now() >= drain_by}
             raise: "Dataflow não atingiu DRAINED em 20 minutos"
         next: drained_sleep
     - drained_sleep:

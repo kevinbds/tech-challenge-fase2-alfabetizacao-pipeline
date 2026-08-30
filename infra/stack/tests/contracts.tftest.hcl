@@ -64,6 +64,9 @@ run "platform_contract" {
       strcontains(output.stream_demo_workflow_contract, "connector_params") &&
       strcontains(output.stream_demo_workflow_contract, "additionalUserLabels") &&
       strcontains(output.stream_demo_workflow_contract, "RUN_ID") &&
+      strcontains(output.stream_demo_workflow_contract, "googleapis.dataflow.v1b3.projects.locations.flexTemplates.launch") &&
+      strcontains(output.stream_demo_workflow_contract, "googleapis.dataflow.v1b3.projects.locations.jobs.get") &&
+      strcontains(output.stream_demo_workflow_contract, "googleapis.dataflow.v1b3.projects.locations.jobs.update") &&
       !strcontains(output.stream_demo_workflow_contract, "seconds: 600")
     )
     error_message = "O demo deve correlacionar arquivo e oito eventos Silver da execução atual, sem espera fixa."
