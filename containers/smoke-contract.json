@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "digest_required": true,
+  "image_unavailable_exit": 125,
+  "command_missing_exit": 127,
+  "success_exit": 0,
+  "timeout_seconds": 60,
+  "images": {
+    "batch": {"command": ["alfabetizacao", "batch", "run", "--help"]},
+    "dbt": {"command": ["dbt", "--version"]},
+    "producer": {"command": ["python", "-m", "alfabetizacao_pipeline.streaming.demo", "--help"]}
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "version": "1.0",
+  "rates": {"bigquery_per_tib": "31.25", "dataflow_per_worker_hour": "0.30", "storage_per_gb_month": "0.13", "pubsub_per_gib": "0.20"},
+  "profiles": {"demo": {"currency": "BRL", "bytes_processed": 27917287424, "workers": 1, "worker_hours": "0.25", "storage_gb_month": "1", "pubsub_gib": "0.01"}},
+  "budget_amount": "50", "budget_is_hard_cap": false, "min_instances": 0, "bronze_storage_class": "STANDARD", "landing_retention_days": 7, "streaming_retention_days": 30
+}

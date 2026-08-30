@@ -1,0 +1,64 @@
+{
+  "name": "ci",
+  "on": ["push", "pull_request"],
+  "permissions": {"contents": "read"},
+  "concurrency": {"group": "ci-${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": true},
+  "jobs": {
+    "python": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 20,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"},
+        {"uses": "astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e", "with": {"version": "0.11.28", "enable-cache": true}},
+        {"run": "uv sync --frozen --all-groups"},
+        {"run": "uv run ruff check ."},
+        {"run": "uv run ruff format --check ."},
+        {"run": "uv run basedpyright"},
+        {"run": "uv run pytest --cov=alfabetizacao_pipeline --cov-report=term-missing --cov-fail-under=90"}
+      ]
+    },
+    "dbt_sql": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 15,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"},
+        {"uses": "astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e", "with": {"version": "0.11.28", "enable-cache": true}},
+        {"run": "uv sync --frozen --group dbt --group quality"},
+        {"run": "uv run dbt parse --project-dir dbt --profiles-dir dbt"},
+        {"run": "uv run sqlfluff lint dbt/models dbt/macros"}
+      ]
+    },
+    "terraform": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 15,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"},
+        {"uses": "hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd", "with": {"terraform_version": "1.14.5", "terraform_wrapper": false}},
+        {"run": "terraform fmt -check -recursive infra"},
+        {"run": "terraform -chdir=infra/bootstrap init -backend=false && terraform -chdir=infra/bootstrap validate && terraform -chdir=infra/bootstrap test"},
+        {"run": "terraform -chdir=infra/stack init -backend=false && terraform -chdir=infra/stack validate && terraform -chdir=infra/stack test"}
+      ]
+    },
+    "contracts_docs": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 10,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"},
+        {"uses": "astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e", "with": {"version": "0.11.28", "enable-cache": true}},
+        {"run": "uv sync --frozen --group dev"},
+        {"run": "uv run pytest tests/contract tests/ops tests/ci"},
+        {"run": "uv run python -m alfabetizacao_pipeline.ops.yaml_lint"},
+        {"run": "test -s README.md && test -d docs"}
+      ]
+    },
+    "secret_scan": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 10,
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "with": {"fetch-depth": 0}},
+        {"uses": "astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e", "with": {"version": "0.11.28", "enable-cache": true}},
+        {"run": "go run github.com/zricethezav/gitleaks/v8@v8.28.0 git --no-banner --redact --log-opts=-1"}
+      ]
+    }
+  }
+}

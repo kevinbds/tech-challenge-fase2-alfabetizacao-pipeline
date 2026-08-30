@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "notification_channel": "${NOTIFICATION_CHANNEL_ID}",
+  "slos": [
+    {"slo_id": "batch-success", "objective": "0.99", "window_days": 30, "unit": "ratio"},
+    {"slo_id": "batch-freshness", "objective": "35", "window_days": 35, "unit": "day"},
+    {"slo_id": "streaming-latency", "objective": "60", "window_days": 30, "unit": "second_p95"}
+  ],
+  "alerts": [
+    {"alert_id": "batch-ingestion-failure", "signal_type": "monitoring_metric", "metric_type": "custom.googleapis.com/alfabetizacao/batch/ingestion_failure_count", "comparison": "gt", "threshold": "0", "unit": "count", "duration_seconds": 0, "severity": "critical"},
+    {"alert_id": "batch-freshness-breach", "signal_type": "monitoring_metric", "metric_type": "custom.googleapis.com/alfabetizacao/batch/last_success_age_days", "comparison": "gt", "threshold": "35", "unit": "day", "duration_seconds": 300, "severity": "critical"},
+    {"alert_id": "batch-volume-critical", "signal_type": "monitoring_metric", "metric_type": "custom.googleapis.com/alfabetizacao/batch/volume_delta_ratio", "comparison": "abs_gt", "threshold": "0.50", "unit": "ratio", "duration_seconds": 0, "severity": "critical"},
+    {"alert_id": "streaming-latency-p95", "signal_type": "monitoring_metric", "metric_type": "custom.googleapis.com/alfabetizacao/streaming/latency_p95_seconds", "comparison": "gte", "threshold": "60", "unit": "second", "duration_seconds": 300, "severity": "critical"},
+    {"alert_id": "dataflow-terminal-failure", "signal_type": "monitoring_metric", "metric_type": "dataflow.googleapis.com/job/is_failed", "comparison": "gt", "threshold": "0", "unit": "count", "duration_seconds": 0, "severity": "critical"},
+    {"alert_id": "dataflow-backlog", "signal_type": "monitoring_metric", "metric_type": "pubsub.googleapis.com/subscription/num_undelivered_messages", "comparison": "gt", "threshold": "0", "unit": "count", "duration_seconds": 300, "severity": "warning"},
+    {"alert_id": "streaming-dlq-not-empty", "signal_type": "monitoring_metric", "metric_type": "pubsub.googleapis.com/subscription/num_undelivered_messages", "comparison": "gt", "threshold": "0", "unit": "count", "duration_seconds": 60, "severity": "critical"},
+    {"alert_id": "dq-critical", "signal_type": "monitoring_metric", "metric_type": "custom.googleapis.com/alfabetizacao/quality/critical_failure_count", "comparison": "gt", "threshold": "0", "unit": "count", "duration_seconds": 0, "severity": "critical"},
+    {"alert_id": "budget-threshold", "signal_type": "budget_notification", "notification_topic": "${BUDGET_NOTIFICATION_TOPIC}", "comparison": "gte", "threshold": "0.50", "unit": "ratio", "duration_seconds": 0, "severity": "warning"}
+  ]
+}
