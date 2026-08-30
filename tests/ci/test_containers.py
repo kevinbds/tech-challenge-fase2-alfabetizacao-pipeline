@@ -8,7 +8,7 @@ import pytest
     [
         ("batch", '["alfabetizacao", "batch", "run"]'),
         ("dbt", '["dbt"]'),
-        ("producer", '["python", "-m", "alfabetizacao_pipeline.streaming.producer"]'),
+        ("producer", '["python", "-m", "alfabetizacao_pipeline.streaming.demo"]'),
     ],
 )
 def test_specialized_image_when_dockerfile_is_parsed(name: str, entrypoint: str) -> None:
