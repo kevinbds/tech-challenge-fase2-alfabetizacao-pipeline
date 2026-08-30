@@ -6,6 +6,7 @@ from alfabetizacao_pipeline.batch.models import (
     BronzeObject,
     ContentFingerprint,
     DryRunEstimate,
+    QueryParameter,
     SourceInspection,
 )
 
@@ -26,6 +27,8 @@ class QueryExecution:
     sql: str
     location: str
     maximum_bytes_billed: int
+    parameters: tuple[QueryParameter, ...]
+    destination_uri: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +80,10 @@ class GcsSdkBoundary(Protocol):
         """Upload and return generation, CRC32C and size metadata."""
         ...
 
+    def list(self, prefix: str) -> tuple[str, ...]:
+        """List exact object URIs below a stable control prefix."""
+        ...
+
 
 class BigQueryAdapter:
     """BigQuery port that propagates discovered location and billing ceiling."""
@@ -100,19 +107,45 @@ class BigQueryAdapter:
         self._location = inspection.identity.location
         return inspection
 
-    def dry_run(self, sql: str) -> DryRunEstimate:
+    def dry_run(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        maximum_bytes_billed: int,
+    ) -> DryRunEstimate:
         """Perform mandatory location-aware dry-run with no billing allowance."""
-        return self.sdk.dry_run(QueryExecution(sql, self._required_location(), 1))
-
-    def compute_fingerprint(self, sql: str, maximum_bytes_billed: int) -> ContentFingerprint:
-        """Compute content identity under the configured planner ceiling."""
-        return self.sdk.fingerprint(
-            QueryExecution(sql, self._required_location(), maximum_bytes_billed)
+        return self.sdk.dry_run(
+            QueryExecution(sql, self._required_location(), maximum_bytes_billed, parameters)
         )
 
-    def export(self, sql: str, maximum_bytes_billed: int) -> tuple[str, ...]:
+    def compute_fingerprint(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        maximum_bytes_billed: int,
+    ) -> ContentFingerprint:
+        """Compute content identity under the configured planner ceiling."""
+        return self.sdk.fingerprint(
+            QueryExecution(sql, self._required_location(), maximum_bytes_billed, parameters)
+        )
+
+    def export(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        destination_uri: str,
+        maximum_bytes_billed: int,
+    ) -> tuple[str, ...]:
         """Execute export at the discovered location and authorized ceiling."""
-        return self.sdk.export(QueryExecution(sql, self._required_location(), maximum_bytes_billed))
+        return self.sdk.export(
+            QueryExecution(
+                sql,
+                self._required_location(),
+                maximum_bytes_billed,
+                parameters,
+                destination_uri,
+            )
+        )
 
     def _required_location(self) -> str:
         if self._location is None:

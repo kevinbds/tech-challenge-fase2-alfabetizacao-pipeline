@@ -93,6 +93,16 @@ class ContentFingerprint(BaseModel):
     value: str
 
 
+class QueryParameter(BaseModel):
+    """Named scalar bound separately from BigQuery SQL text."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    data_type: BigQueryType
+    value: int | str
+
+
 class BronzeObject(BaseModel):
     """Integrity metadata of one immutable Bronze object generation."""
 

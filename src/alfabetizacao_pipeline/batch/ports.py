@@ -6,6 +6,7 @@ from alfabetizacao_pipeline.batch.models import (
     BronzeObject,
     ContentFingerprint,
     DryRunEstimate,
+    QueryParameter,
     SourceInspection,
 )
 
@@ -20,15 +21,31 @@ class BigQueryPort(Protocol):
         """Discover location, provenance and runtime schema."""
         ...
 
-    def dry_run(self, sql: str) -> DryRunEstimate:
+    def dry_run(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        maximum_bytes_billed: int,
+    ) -> DryRunEstimate:
         """Estimate bytes without executing the query."""
         ...
 
-    def compute_fingerprint(self, sql: str, maximum_bytes_billed: int) -> ContentFingerprint:
+    def compute_fingerprint(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        maximum_bytes_billed: int,
+    ) -> ContentFingerprint:
         """Execute the bounded content identity query."""
         ...
 
-    def export(self, sql: str, maximum_bytes_billed: int) -> tuple[str, ...]:
+    def export(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        destination_uri: str,
+        maximum_bytes_billed: int,
+    ) -> tuple[str, ...]:
         """Export a partition to immutable landing objects."""
         ...
 

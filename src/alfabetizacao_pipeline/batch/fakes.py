@@ -1,17 +1,17 @@
-import base64
-import zlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
 
 from alfabetizacao_pipeline.batch.catalog import SOURCE_CATALOG
 from alfabetizacao_pipeline.batch.errors import ImmutableObjectExistsError
+from alfabetizacao_pipeline.batch.integrity import crc32c_base64
 from alfabetizacao_pipeline.batch.models import (
     BatchManifest,
     BatchStatus,
     BronzeObject,
     ContentFingerprint,
     DryRunEstimate,
+    QueryParameter,
     SourceIdentity,
     SourceInspection,
 )
@@ -41,19 +41,35 @@ class FakeBigQuery:
             columns=contract.columns,
         )
 
-    def dry_run(self, sql: str) -> DryRunEstimate:
+    def dry_run(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        maximum_bytes_billed: int,
+    ) -> DryRunEstimate:
         """Return the configured non-executing byte estimate."""
-        del sql
+        del sql, parameters, maximum_bytes_billed
         return self.estimate
 
-    def compute_fingerprint(self, sql: str, maximum_bytes_billed: int) -> ContentFingerprint:
+    def compute_fingerprint(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        maximum_bytes_billed: int,
+    ) -> ContentFingerprint:
         """Return the configured deterministic content identity."""
-        del sql, maximum_bytes_billed
+        del sql, parameters, maximum_bytes_billed
         return ContentFingerprint(row_count=10, value=self.fingerprint)
 
-    def export(self, sql: str, maximum_bytes_billed: int) -> tuple[str, ...]:
+    def export(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        destination_uri: str,
+        maximum_bytes_billed: int,
+    ) -> tuple[str, ...]:
         """Record one export and return its fixture landing URI."""
-        del sql, maximum_bytes_billed
+        del sql, parameters, destination_uri, maximum_bytes_billed
         self.executed_queries += 1
         return ("gs://landing/fixture.parquet",)
 
@@ -106,11 +122,10 @@ class InMemoryObjectStore:
         if uri in self.objects:
             raise ImmutableObjectExistsError(uri=uri)
         self.objects[uri] = payload
-        checksum = zlib.crc32(payload).to_bytes(4, byteorder="big")
         return BronzeObject(
             uri=uri,
             generation=1,
-            crc32c=base64.b64encode(checksum).decode("ascii"),
+            crc32c=crc32c_base64(payload),
             size_bytes=len(payload),
         )
 

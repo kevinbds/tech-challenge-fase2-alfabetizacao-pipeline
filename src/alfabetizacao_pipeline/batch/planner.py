@@ -2,7 +2,13 @@ from uuid import NAMESPACE_URL, uuid5
 
 from alfabetizacao_pipeline.batch.catalog import SOURCE_CATALOG
 from alfabetizacao_pipeline.batch.errors import CostLimitExceededError, SchemaDriftError
-from alfabetizacao_pipeline.batch.models import BatchPlan, BatchRequest, BatchStatus
+from alfabetizacao_pipeline.batch.models import (
+    BatchPlan,
+    BatchRequest,
+    BatchStatus,
+    BigQueryType,
+    QueryParameter,
+)
 from alfabetizacao_pipeline.batch.ports import BigQueryPort, ManifestStore
 from alfabetizacao_pipeline.batch.schema_drift import compare_schema
 from alfabetizacao_pipeline.batch.sql import build_fingerprint_sql, build_select_sql
@@ -23,14 +29,19 @@ def plan_batch(
     if drift.blocking:
         raise SchemaDriftError(source=request.source)
     select_sql = build_select_sql(contract, SOURCE_PROJECT, SOURCE_DATASET, request.year)
-    estimate = query.dry_run(select_sql)
+    parameters = (QueryParameter(name="year", data_type=BigQueryType.INT64, value=request.year),)
+    estimate = query.dry_run(select_sql, parameters, request.maximum_bytes_billed)
     if estimate.bytes_processed > request.maximum_bytes_billed:
         raise CostLimitExceededError(
             estimated_bytes=estimate.bytes_processed,
             maximum_bytes_billed=request.maximum_bytes_billed,
         )
     fingerprint_sql = build_fingerprint_sql(contract, SOURCE_PROJECT, SOURCE_DATASET, request.year)
-    fingerprint = query.compute_fingerprint(fingerprint_sql, request.maximum_bytes_billed)
+    fingerprint = query.compute_fingerprint(
+        fingerprint_sql,
+        parameters,
+        request.maximum_bytes_billed,
+    )
     previous = manifests.latest_completed(request.source, request.year)
     matching_previous = (
         previous is not None

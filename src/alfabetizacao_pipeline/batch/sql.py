@@ -15,11 +15,12 @@ def build_select_sql(
     year: int,
 ) -> str:
     """Build an explicit-column annual partition query."""
+    del year
     columns = ",\n  ".join(column.name for column in contract.columns)
     return (
         f"SELECT\n  {columns}\n"
         f"FROM {qualified_table(project, dataset, contract.name)}\n"
-        f"WHERE ano = {year}"
+        "WHERE ano = @year"
     )
 
 
@@ -30,6 +31,7 @@ def build_fingerprint_sql(
     year: int,
 ) -> str:
     """Build the canonical row-count and BIT_XOR content fingerprint query."""
+    del year
     columns = ", ".join(column.name for column in contract.columns)
     return (
         "SELECT\n"
@@ -37,7 +39,7 @@ def build_fingerprint_sql(
         "  BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(STRUCT("
         f"{columns})))) AS content_fingerprint\n"
         f"FROM {qualified_table(project, dataset, contract.name)}\n"
-        f"WHERE ano = {year}"
+        "WHERE ano = @year"
     )
 
 

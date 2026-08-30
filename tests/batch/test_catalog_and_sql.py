@@ -43,4 +43,5 @@ def test_select_and_fingerprint_use_explicit_columns_when_built() -> None:
     assert "COUNT(*) AS row_count" in fingerprint_sql
     assert "BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(STRUCT(" in fingerprint_sql
     assert "id_municipio" in fingerprint_sql
-    assert "WHERE ano = 2024" in fingerprint_sql
+    assert "WHERE ano = @year" in fingerprint_sql
+    assert "2024" not in fingerprint_sql

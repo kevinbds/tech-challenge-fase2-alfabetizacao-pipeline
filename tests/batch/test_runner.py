@@ -15,6 +15,7 @@ from alfabetizacao_pipeline.batch.models import (
     BatchRunContext,
     BatchStatus,
     DryRunEstimate,
+    QueryParameter,
 )
 from alfabetizacao_pipeline.batch.runner import execute_batch
 from alfabetizacao_pipeline.batch.runtime import BatchRuntime
@@ -31,8 +32,14 @@ class SequenceClock:
 
 class InterruptedBigQuery(FakeBigQuery):
     @override
-    def export(self, sql: str, maximum_bytes_billed: int) -> tuple[str, ...]:
-        del sql, maximum_bytes_billed
+    def export(
+        self,
+        sql: str,
+        parameters: tuple[QueryParameter, ...],
+        destination_uri: str,
+        maximum_bytes_billed: int,
+    ) -> tuple[str, ...]:
+        del sql, parameters, destination_uri, maximum_bytes_billed
         raise InterruptedError
 
 

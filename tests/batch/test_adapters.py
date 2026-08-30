@@ -11,9 +11,11 @@ from alfabetizacao_pipeline.batch.adapters import (
 from alfabetizacao_pipeline.batch.catalog import SOURCE_CATALOG
 from alfabetizacao_pipeline.batch.errors import SourceInspectionRequiredError
 from alfabetizacao_pipeline.batch.models import (
+    BigQueryType,
     BronzeObject,
     ContentFingerprint,
     DryRunEstimate,
+    QueryParameter,
     SourceIdentity,
     SourceInspection,
 )
@@ -54,6 +56,9 @@ class RecordingGcsSdk:
         self.upload_request = request
         return BronzeObject(uri=request.uri, generation=1, crc32c="AAAAAA==", size_bytes=1)
 
+    def list(self, prefix: str) -> tuple[str, ...]:
+        return (prefix + "part.parquet",)
+
 
 def test_bigquery_adapter_uses_runtime_location_when_querying() -> None:
     # Given: an adapter whose SDK discovers a non-default location
@@ -68,8 +73,9 @@ def test_bigquery_adapter_uses_runtime_location_when_querying() -> None:
     )
     # When: inspection precedes a dry-run and export
     _ = adapter.inspect("uf")
-    _ = adapter.dry_run("SELECT ano FROM source")
-    _ = adapter.export("EXPORT DATA", 99)
+    parameters = (QueryParameter(name="year", data_type=BigQueryType.INT64, value=2024),)
+    _ = adapter.dry_run("SELECT ano FROM source", parameters, 99)
+    _ = adapter.export("EXPORT DATA", parameters, "gs://landing/part-*.parquet", 99)
     # Then: SDK requests carry discovered location and caller cap
     assert tuple(execution.location for execution in sdk.executions) == (
         "southamerica-east1",
@@ -90,7 +96,7 @@ def test_bigquery_adapter_requires_inspection_when_location_is_unknown() -> None
     )
     # When/Then: querying is blocked instead of assuming a location
     with pytest.raises(SourceInspectionRequiredError):
-        _ = adapter.dry_run("SELECT ano FROM source")
+        _ = adapter.dry_run("SELECT ano FROM source", (), 99)
 
 
 def test_gcs_adapter_forces_generation_zero_when_uploading() -> None:

@@ -8,6 +8,8 @@ from alfabetizacao_pipeline.batch.models import (
     BatchRequest,
     BatchRunContext,
     BatchStatus,
+    BigQueryType,
+    QueryParameter,
 )
 from alfabetizacao_pipeline.batch.planner import SOURCE_DATASET, SOURCE_PROJECT, plan_batch
 from alfabetizacao_pipeline.batch.runtime import BatchRuntime
@@ -51,6 +53,8 @@ def execute_batch(
     )
     exported = runtime.query.export(
         build_export_sql(select_sql, landing_uri),
+        (QueryParameter(name="year", data_type=BigQueryType.INT64, value=request.year),),
+        landing_uri,
         request.maximum_bytes_billed,
     )
     bronze_objects = tuple(
@@ -59,7 +63,7 @@ def execute_batch(
                 f"{context.bronze_prefix}/{request.source}/ano={request.year}/"
                 f"run={plan.run_id}/part-{index:05d}.parquet"
             ),
-            _validated_parquet(runtime.objects.read(uri), contract.name),
+            validate_landing_parquet(runtime.objects.read(uri), contract.name),
         )
         for index, uri in enumerate(exported)
     )
@@ -74,9 +78,31 @@ def execute_batch(
     return completed
 
 
-def _validated_parquet(payload: bytes, source: str) -> bytes:
+def validate_landing_parquet(payload: bytes, source: str) -> bytes:
+    """Require exact ordered Arrow fields and Snappy physical encoding."""
     parquet_file = pq.ParquetFile(pa.BufferReader(payload))
-    expected_names = [column.name for column in SOURCE_CATALOG[source].columns]
-    if parquet_file.schema_arrow.names != expected_names:
+    contract = SOURCE_CATALOG[source]
+    arrow_types: dict[BigQueryType, pa.DataType] = {
+        BigQueryType.INT64: pa.int64(),
+        BigQueryType.FLOAT64: pa.float64(),
+        BigQueryType.STRING: pa.string(),
+    }
+    expected_schema = pa.schema(
+        [
+            pa.field(
+                column.name,
+                arrow_types[column.data_type],
+                nullable=column.mode == "NULLABLE",
+            )
+            for column in contract.columns
+        ]
+    )
+    metadata = parquet_file.metadata
+    codecs = {
+        metadata.row_group(group).column(column).compression.upper()
+        for group in range(metadata.num_row_groups)
+        for column in range(metadata.row_group(group).num_columns)
+    }
+    if not parquet_file.schema_arrow.equals(expected_schema) or codecs != {"SNAPPY"}:
         raise LandingSchemaError(source=source)
     return payload

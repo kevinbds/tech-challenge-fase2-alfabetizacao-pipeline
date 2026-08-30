@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Annotated
@@ -14,8 +15,10 @@ from alfabetizacao_pipeline.batch.fakes import (
 )
 from alfabetizacao_pipeline.batch.models import BatchRequest, BatchRunContext, DryRunEstimate
 from alfabetizacao_pipeline.batch.planner import plan_batch
+from alfabetizacao_pipeline.batch.production import build_production_composition
 from alfabetizacao_pipeline.batch.runner import execute_batch
 from alfabetizacao_pipeline.batch.runtime import BatchRuntime, SystemClock
+from alfabetizacao_pipeline.config import AppSettings
 from alfabetizacao_pipeline.errors import ExitCode
 from alfabetizacao_pipeline.schema_reference.builder import build_reference_file
 from alfabetizacao_pipeline.types import OutputFormat
@@ -48,11 +51,22 @@ def _request(source: str, year: int, maximum_bytes_billed: int, dry_run: bool) -
 @source_app.command("inspect")
 def inspect_source(
     source: Annotated[str, typer.Option("--source")],
+    demo: Annotated[bool, typer.Option("--demo")] = False,
     _output_format: Annotated[OutputFormat, typer.Option("--format")] = OutputFormat.JSON,
 ) -> None:
-    """Inspect source location and schema through a no-cloud fixture adapter."""
+    """Inspect runtime source metadata; fixtures require explicit demo mode."""
     request = _request(source, 2024, 25 * 1024**3, dry_run=True)
-    inspection = _query(0).inspect(request.source)
+    query = (
+        _query(0)
+        if demo
+        else build_production_composition(
+            source,
+            AppSettings(),
+            git_sha="inspection-only",
+            image_digest="inspection-only",
+        ).runtime.query
+    )
+    inspection = query.inspect(request.source)
     typer.echo(inspection.model_dump_json())
 
 
@@ -62,13 +76,27 @@ def plan(
     year: Annotated[int, typer.Option("--year")],
     dry_run: Annotated[bool, typer.Option("--dry-run/--execute")] = True,
     maximum_bytes_billed: Annotated[int, typer.Option("--maximum-bytes-billed")] = 25 * 1024**3,
-    estimated_bytes: Annotated[int, typer.Option("--estimated-bytes")] = 1024**3,
-    _output_format: Annotated[OutputFormat, typer.Option("--format")] = OutputFormat.JSON,
+    demo_estimated_bytes: Annotated[
+        int | None,
+        typer.Option("--demo-estimated-bytes"),
+    ] = None,
 ) -> None:
     """Return a bounded dry-run plan and stable JSON exit contract."""
     request = _request(source, year, maximum_bytes_billed, dry_run)
     try:
-        result = plan_batch(request, _query(estimated_bytes), InMemoryManifestStore())
+        if demo_estimated_bytes is not None:
+            query = _query(demo_estimated_bytes)
+            manifests = InMemoryManifestStore()
+        else:
+            composition = build_production_composition(
+                source,
+                AppSettings(),
+                git_sha="plan-only",
+                image_digest="plan-only",
+            )
+            query = composition.runtime.query
+            manifests = composition.runtime.manifests
+        result = plan_batch(request, query, manifests)
     except CostLimitExceededError as error:
         typer.echo(
             (
@@ -88,10 +116,35 @@ def run(
     source: Annotated[str, typer.Option("--source")],
     year: Annotated[int, typer.Option("--year")],
     dry_run: Annotated[bool, typer.Option("--dry-run/--execute")] = True,
+    demo: Annotated[bool, typer.Option("--demo")] = False,
     _output_format: Annotated[OutputFormat, typer.Option("--format")] = OutputFormat.JSON,
 ) -> None:
-    """Execute the state machine against isolated local fixture adapters."""
+    """Run production adapters; local fixtures require explicit demo mode."""
     request = _request(source, year, 25 * 1024**3, dry_run)
+    if not demo:
+        git_sha = os.environ.get("ALFABETIZACAO_GIT_SHA")
+        image_digest = os.environ.get("ALFABETIZACAO_IMAGE_DIGEST")
+        if git_sha is None or image_digest is None:
+            typer.echo('{"status":"deployment_provenance_required"}', err=True)
+            raise typer.Exit(code=ExitCode.INVALID_CONFIGURATION)
+        composition = build_production_composition(
+            source,
+            AppSettings(),
+            git_sha=git_sha,
+            image_digest=image_digest,
+        )
+        if dry_run:
+            plan_result = plan_batch(
+                request,
+                composition.runtime.query,
+                composition.runtime.manifests,
+            )
+            typer.echo(plan_result.model_dump_json())
+            return
+        typer.echo(
+            execute_batch(request, composition.runtime, composition.context).model_dump_json()
+        )
+        return
     query = _query(1024**3)
     if dry_run:
         typer.echo(plan_batch(request, query, InMemoryManifestStore()).model_dump_json())

@@ -100,3 +100,15 @@ class SourceInspectionRequiredError(Exception):
     def __str__(self) -> str:
         """Render the source that still requires inspection."""
         return f"inspeção de localização obrigatória para {self.source}"
+
+
+@dataclass(frozen=True, slots=True)
+class ManifestConflictError(Exception):
+    """A concurrent writer used the same checkpoint URI with different content."""
+
+    uri: str
+
+    @override
+    def __str__(self) -> str:
+        """Render the immutable checkpoint conflict."""
+        return f"checkpoint concorrente diverge do conteúdo persistido: {self.uri}"
