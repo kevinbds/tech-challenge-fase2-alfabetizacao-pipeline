@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help sync lint format-check typecheck test test-ops test-ci contracts \
+.PHONY: help sync lint format-check typecheck test test-ops test-ci yaml-lint contracts \
 	verify-fast verify check estimate-cost
 
 help: ## Lista os targets locais sem executar cloud
@@ -27,10 +27,13 @@ test-ops: ## Exercita FinOps e contratos operacionais
 test-ci: ## Valida CI, Cloud Build, containers e targets
 	uv run pytest tests/ci
 
+yaml-lint: ## Valida todos os caminhos YAML presentes
+	uv run python -m alfabetizacao_pipeline.ops.yaml_lint
+
 contracts: ## Valida catalogos por meio dos modelos Pydantic
 	uv run python -c "from pathlib import Path; from alfabetizacao_pipeline.ops.catalogs import load_observability, load_run_contracts; load_observability(Path('ops/observability.yml')); load_run_contracts(Path('ops/run-contracts.yml'))"
 
-verify-fast: lint format-check typecheck test-ops test-ci contracts ## Gate local rapido da plataforma
+verify-fast: lint format-check typecheck test-ops test-ci yaml-lint contracts ## Gate local rapido da plataforma
 
 verify: sync verify-fast test ## Gate local completo
 

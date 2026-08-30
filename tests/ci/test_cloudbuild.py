@@ -32,6 +32,7 @@ def test_cloudbuild_when_definition_is_parsed() -> None:
     substitutions = _mapping(config["substitutions"])
     steps = [_mapping(step) for step in _sequence(config["steps"])]
     serialized = path.read_text(encoding="utf-8")
+    digest_capture = Path("cloudbuild/capture-digests.sh").read_text(encoding="utf-8")
 
     # Then: builds are SHA-tagged, digest-producing, keyless and provenance-aware.
     assert substitutions["_SERVICE_ACCOUNT"] == ""
@@ -39,7 +40,9 @@ def test_cloudbuild_when_definition_is_parsed() -> None:
     assert all("latest" not in str(step) for step in steps)
     assert "$COMMIT_SHA" in serialized
     assert "image-digests.json" in serialized
-    assert "sha256" in serialized
+    assert "sha256" in digest_capture
+    assert "cloudbuild/capture-digests.sh" in serialized
+    assert all(name in serialized for name in ("PROJECT_ID", "COMMIT_SHA", "BUILD_ID"))
     assert "requestedVerifyOption" in serialized
     assert "credentials" not in serialized.lower()
     assert "key.json" not in serialized.lower()
