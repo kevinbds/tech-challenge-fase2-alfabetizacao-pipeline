@@ -17,3 +17,7 @@ output "lifecycle_contracts" {
     ]
   }
 }
+
+output "force_destroy" {
+  value = { for key, bucket in google_storage_bucket.data : key => bucket.force_destroy }
+}

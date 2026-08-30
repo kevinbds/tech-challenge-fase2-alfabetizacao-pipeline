@@ -10,6 +10,7 @@ batch_image    = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/batch@sha256:
 dbt_image      = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dbt@sha256:SUBSTITUA"
 producer_image = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/producer@sha256:SUBSTITUA"
 dataflow_image = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dataflow@sha256:SUBSTITUA"
+release_git_sha = "0123456789abcdef0123456789abcdef01234567" # substitua pelo git_sha emitido pelo Cloud Build
 
 reference_schema_uris = {
   uf                           = "gs://BUCKET/reference/uf/HASH/schema.parquet"
@@ -23,8 +24,9 @@ reference_schema_uris = {
 scheduler_enabled = false
 runtime_entrypoints_verified = false # altere somente após o gate de integração dos containers
 batch_command               = ["alfabetizacao"]
-batch_args                  = ["batch", "run"]
+batch_args                  = ["batch", "run", "--source", "municipio", "--year", "2024", "--dry-run", "--format", "json"]
 producer_command            = ["python", "-m", "alfabetizacao_pipeline.streaming.producer"]
 producer_args               = ["--mode", "pubsub", "--fixture", "/app/contracts/events/fixtures/demo.json", "--report", "/tmp/producer-report.json"]
 budget_currency   = "BRL"
 # budget_amount omitido usa 50 apenas porque BRL foi escolhido explicitamente.
+deletion_protection = true # mude para false só no apply preparatório do teardown autorizado

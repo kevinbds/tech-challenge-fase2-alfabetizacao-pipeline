@@ -12,6 +12,8 @@ variable "archive_bucket" { type = string }
 variable "backlog_subscription_ids" { type = list(string) }
 variable "dataflow_template_path" { type = string }
 variable "labels" { type = map(string) }
+variable "deletion_protection" { type = bool }
+variable "release_git_sha" { type = string }
 variable "entrypoints" {
   type = map(object({
     command = list(string)

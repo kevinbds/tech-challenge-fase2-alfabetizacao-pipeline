@@ -6,3 +6,4 @@ artifacts_bucket_name   = "seu-projeto-gcp-fiap-fase2-artifacts"
 # Só preencha após autorizar o remoto. Não há segredo neste arquivo.
 github_repository  = null
 billing_account_id = null
+deletion_protection = true # mude para false só no apply preparatório do teardown autorizado

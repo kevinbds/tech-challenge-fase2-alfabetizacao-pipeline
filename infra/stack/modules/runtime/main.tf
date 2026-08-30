@@ -14,7 +14,7 @@ locals {
       image           = var.images["dbt"]
       service_account = var.service_account_emails["dbt"]
       command         = ["dbt"]
-      args            = ["build", "--target", "prod"]
+      args            = ["build", "--target", "cloud", "--project-dir", "dbt", "--profiles-dir", "dbt"]
       timeout         = "3600s"
       retries         = 0
       cpu             = "1"
@@ -54,7 +54,7 @@ resource "google_cloud_run_v2_job" "job" {
   location            = var.region
   name                = "${var.name_prefix}-${each.key}"
   labels              = var.labels
-  deletion_protection = true
+  deletion_protection = var.deletion_protection
 
   template {
     parallelism = 1
@@ -71,13 +71,23 @@ resource "google_cloud_run_v2_job" "job" {
         args    = each.value.args
 
         env {
-          name  = "GCP_PROJECT_ID"
+          name  = "ALFABETIZACAO_GCP_PROJECT_ID"
           value = var.project_id
         }
 
         env {
-          name  = "MAXIMUM_BYTES_BILLED"
+          name  = "ALFABETIZACAO_MAX_BYTES_BILLED"
           value = tostring(var.maximum_bytes_billed)
+        }
+
+        env {
+          name  = "ALFABETIZACAO_GIT_SHA"
+          value = var.release_git_sha
+        }
+
+        env {
+          name  = "ALFABETIZACAO_IMAGE_DIGEST"
+          value = each.value.image
         }
 
         env {
@@ -123,7 +133,7 @@ resource "google_workflows_workflow" "batch" {
   description         = "Executa Batch e dbt em sequência; promoção é responsabilidade do dbt"
   service_account     = var.service_account_emails["workflow"]
   labels              = var.labels
-  deletion_protection = true
+  deletion_protection = var.deletion_protection
 
   source_contents = templatefile("${path.module}/templates/batch.yaml", {
     project_id = var.project_id
@@ -140,7 +150,7 @@ resource "google_workflows_workflow" "stream_demo" {
   description         = "Inicia Flex sob demanda, publica fixture, drena e verifica as duas superfícies"
   service_account     = var.service_account_emails["workflow"]
   labels              = var.labels
-  deletion_protection = true
+  deletion_protection = var.deletion_protection
 
   source_contents = local.stream_demo_source
 

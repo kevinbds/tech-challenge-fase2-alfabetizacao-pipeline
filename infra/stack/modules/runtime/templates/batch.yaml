@@ -1,11 +1,30 @@
 main:
   params: [input]
   steps:
-    - run_batch:
-        call: googleapis.run.v2.projects.locations.jobs.run
-        args:
-          name: $${"projects/${project_id}/locations/${region}/jobs/${batch_job}"}
-        result: batch_execution
+    - initialize:
+        assign:
+          - year: $${default(map.get(input, "year"), int(text.substring(time.format(sys.now(), "America/Sao_Paulo"), 0, 4)))}
+          - sources: $${default(map.get(input, "sources"), ["uf", "meta_alfabetizacao_brasil", "meta_alfabetizacao_uf", "meta_alfabetizacao_municipio", "municipio", "alunos"])}
+          - batch_executions: []
+    - run_sources:
+        for:
+          value: source
+          in: $${sources}
+          steps:
+            - run_batch:
+                call: googleapis.run.v2.projects.locations.jobs.run
+                args:
+                  name: $${"projects/${project_id}/locations/${region}/jobs/${batch_job}"}
+                  body:
+                    overrides:
+                      containerOverrides:
+                        - args: [batch, run, --source, $${source}, --year, $${string(year)}, --execute, --format, json]
+                  connector_params:
+                    timeout: 3600
+                result: batch_execution
+            - remember_batch:
+                assign:
+                  - batch_executions: $${list.concat(batch_executions, batch_execution.name)}
     - run_dbt:
         call: googleapis.run.v2.projects.locations.jobs.run
         args:
@@ -13,5 +32,5 @@ main:
         result: dbt_execution
     - finish:
         return:
-          batch: $${batch_execution.name}
+          batch: $${batch_executions}
           dbt: $${dbt_execution.name}

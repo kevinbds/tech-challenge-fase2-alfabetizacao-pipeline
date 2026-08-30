@@ -105,6 +105,16 @@ variable "dataflow_image" {
   }
 }
 
+variable "release_git_sha" {
+  type        = string
+  description = "SHA Git exato do código empacotado nas imagens da release."
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.release_git_sha))
+    error_message = "release_git_sha deve conter exatamente 40 caracteres hexadecimais minúsculos."
+  }
+}
+
 variable "reference_schema_uris" {
   type        = map(string)
   description = "URIs imutáveis dos Parquet zero-row, fora do wildcard Bronze."
@@ -144,8 +154,8 @@ variable "batch_command" {
 
 variable "batch_args" {
   type        = list(string)
-  default     = ["batch", "run"]
-  description = "Subcomando Batch validado; a execução ainda deve informar fonte e ano."
+  default     = ["batch", "run", "--source", "municipio", "--year", "2024", "--dry-run", "--format", "json"]
+  description = "Invocação segura e completa; o Workflow mensal sobrescreve fonte, ano e modo."
 }
 
 variable "producer_command" {
@@ -198,7 +208,7 @@ variable "budget_amount" {
 variable "deletion_protection" {
   type        = bool
   default     = true
-  description = "Proteção explícita das tabelas BigQuery."
+  description = "Proteção explícita de dados e runtime; desative em apply separado antes do destroy autorizado."
 }
 
 variable "alert_email" {

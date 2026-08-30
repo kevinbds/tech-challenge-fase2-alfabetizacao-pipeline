@@ -37,15 +37,21 @@ output "stream_demo_workflow_contract" {
   value       = module.runtime.stream_demo_source
 }
 
+output "batch_workflow_contract" {
+  description = "Workflow Batch renderizado, incluindo as seis fontes e overrides completos."
+  value       = module.runtime.batch_workflow_source
+}
+
 output "runtime_contract" {
   value = {
-    scheduler            = module.runtime.scheduler_contract
-    jobs                 = module.runtime.job_contracts
-    maximum_bytes_billed = var.maximum_bytes_billed
-    dataflow_min_workers = 1
-    dataflow_max_workers = 2
-    dataflow_experiments = ["enable_portable_runner"]
-    permanent_job_count  = local.permanent_dataflow_job_count
+    scheduler             = module.runtime.scheduler_contract
+    jobs                  = module.runtime.job_contracts
+    maximum_bytes_billed  = var.maximum_bytes_billed
+    dataflow_min_workers  = 1
+    dataflow_max_workers  = 2
+    dataflow_experiments  = ["enable_portable_runner"]
+    permanent_job_count   = local.permanent_dataflow_job_count
+    storage_force_destroy = module.storage.force_destroy
   }
 }
 

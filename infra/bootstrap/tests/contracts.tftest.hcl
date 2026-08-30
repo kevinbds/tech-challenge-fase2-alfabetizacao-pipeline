@@ -36,6 +36,14 @@ run "bootstrap_contract" {
     condition     = output.source_location == "US"
     error_message = "A localização descoberta deve coincidir com a localização declarada."
   }
+  assert {
+    condition = (
+      contains(local.ci_project_roles, "roles/cloudbuild.builds.editor") &&
+      contains(local.ci_project_roles, "roles/logging.logWriter") &&
+      google_storage_bucket_iam_member.ci_artifact_creator[0].role == "roles/storage.objectCreator"
+    )
+    error_message = "A identidade CI precisa criar builds, emitir logs e gravar os artefatos do build."
+  }
 }
 
 run "rejects_source_location_mismatch" {
@@ -62,5 +70,14 @@ run "omits_wif_without_authorized_remote" {
   assert {
     condition     = length(google_iam_workload_identity_pool.github) == 0 && length(google_iam_workload_identity_pool_provider.github) == 0
     error_message = "WIF não pode nascer antes da autorização do remoto."
+  }
+}
+
+run "teardown_requires_explicit_protection_change" {
+  command = plan
+  variables { deletion_protection = false }
+  assert {
+    condition     = google_storage_bucket.terraform_state.force_destroy && google_storage_bucket.artifacts.force_destroy
+    error_message = "O teardown dos buckets só pode esvaziá-los após opt-in explícito."
   }
 }

@@ -3,24 +3,16 @@ from pathlib import Path
 from pydantic import JsonValue, TypeAdapter
 
 JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+JSON_MAPPING: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+JSON_SEQUENCE: TypeAdapter[list[JsonValue]] = TypeAdapter(list[JsonValue])
 
 
 def _mapping(value: JsonValue) -> dict[str, JsonValue]:
-    match value:
-        case dict() as mapping:
-            return mapping
-        case _:
-            message = "expected a mapping"
-            raise AssertionError(message)
+    return JSON_MAPPING.validate_python(value)
 
 
 def _sequence(value: JsonValue) -> list[JsonValue]:
-    match value:
-        case list() as sequence:
-            return sequence
-        case _:
-            message = "expected a sequence"
-            raise AssertionError(message)
+    return JSON_SEQUENCE.validate_python(value)
 
 
 def test_cloudbuild_when_definition_is_parsed() -> None:
@@ -31,6 +23,7 @@ def test_cloudbuild_when_definition_is_parsed() -> None:
     # When: machine-consumed build steps and substitutions are inspected.
     substitutions = _mapping(config["substitutions"])
     steps = [_mapping(step) for step in _sequence(config["steps"])]
+    step_ids = {str(step["id"]) for step in steps}
     serialized = path.read_text(encoding="utf-8")
     digest_capture = Path("cloudbuild/capture-digests.sh").read_text(encoding="utf-8")
 
@@ -38,6 +31,19 @@ def test_cloudbuild_when_definition_is_parsed() -> None:
     assert substitutions["_SERVICE_ACCOUNT"] == ""
     assert substitutions["_REGION"] == "southamerica-east1"
     assert all("latest" not in str(step) for step in steps)
+    assert all("@sha256:" in str(step["name"]) for step in steps)
+    assert {
+        "build-batch",
+        "push-batch",
+        "build-dbt",
+        "push-dbt",
+        "build-producer",
+        "push-producer",
+        "build-dataflow",
+        "push-dataflow",
+        "capture-digests",
+    } == step_ids
+    assert all(f'"{image}"' in digest_capture for image in ("batch", "dbt", "producer", "dataflow"))
     assert "$COMMIT_SHA" in serialized
     assert "image-digests.json" in serialized
     assert "sha256" in digest_capture

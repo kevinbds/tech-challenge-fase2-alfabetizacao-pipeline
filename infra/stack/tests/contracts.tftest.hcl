@@ -15,6 +15,7 @@ variables {
   dbt_image             = "us-docker.pkg.dev/fiap-fase2-test/pipeline/dbt@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   producer_image        = "us-docker.pkg.dev/fiap-fase2-test/pipeline/producer@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   dataflow_image        = "us-docker.pkg.dev/fiap-fase2-test/pipeline/dataflow@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  release_git_sha       = "0123456789abcdef0123456789abcdef01234567"
   reference_schema_uris = {
     uf                           = "gs://fiap-fase2-test-artifacts/reference/uf/schema.parquet"
     meta_alfabetizacao_brasil    = "gs://fiap-fase2-test-artifacts/reference/meta_alfabetizacao_brasil/schema.parquet"
@@ -115,11 +116,51 @@ run "platform_contract" {
   assert {
     condition = (
       output.runtime_entrypoint_contract.jobs["batch"].command == tolist(["alfabetizacao"]) &&
-      output.runtime_entrypoint_contract.jobs["batch"].args == tolist(["batch", "run"]) &&
+      output.runtime_entrypoint_contract.jobs["batch"].args == tolist(["batch", "run", "--source", "municipio", "--year", "2024", "--dry-run", "--format", "json"]) &&
+      output.runtime_entrypoint_contract.jobs["dbt"].args == tolist(["build", "--target", "cloud", "--project-dir", "dbt", "--profiles-dir", "dbt"]) &&
       output.runtime_entrypoint_contract.jobs["producer"].command == tolist(["python", "-m", "alfabetizacao_pipeline.streaming.producer"]) &&
       output.runtime_entrypoint_contract.jobs["producer"].args[0] == "--mode"
     )
     error_message = "Os jobs devem expor os entrypoints reais validados no SHA integrado."
+  }
+  assert {
+    condition = (
+      strcontains(output.stream_demo_workflow_contract, "--target, cloud") &&
+      strcontains(output.stream_demo_workflow_contract, "--project-dir, dbt") &&
+      strcontains(output.stream_demo_workflow_contract, "--profiles-dir, dbt")
+    )
+    error_message = "O override dbt do demo deve preservar target e diretórios reais da imagem."
+  }
+  assert {
+    condition = (
+      output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_GCP_PROJECT_ID"] == "fiap-fase2-test" &&
+      output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_MAX_BYTES_BILLED"] == "26843545600" &&
+      output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_GIT_SHA"] == "0123456789abcdef0123456789abcdef01234567" &&
+      output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_IMAGE_DIGEST"] == "us-docker.pkg.dev/fiap-fase2-test/pipeline/batch@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" &&
+      !contains(keys(output.runtime_entrypoint_contract.jobs["batch"].env), "GCP_PROJECT_ID")
+    )
+    error_message = "O runtime deve usar exatamente o prefixo lido por AppSettings."
+  }
+  assert {
+    condition = (
+      strcontains(output.batch_workflow_contract, "containerOverrides") &&
+      strcontains(output.batch_workflow_contract, "--execute") &&
+      alltrue([for source in ["uf", "meta_alfabetizacao_brasil", "meta_alfabetizacao_uf", "meta_alfabetizacao_municipio", "municipio", "alunos"] : strcontains(output.batch_workflow_contract, source)])
+    )
+    error_message = "O Workflow mensal deve executar as seis fontes com fonte, ano e modo explícitos."
+  }
+}
+
+run "teardown_requires_explicit_protection_change" {
+  command = plan
+  variables { deletion_protection = false }
+  assert {
+    condition = (
+      output.runtime_contract.jobs["batch"].deletion_protection == false &&
+      output.security_contract.deletion_protection == false &&
+      alltrue(values(output.runtime_contract.storage_force_destroy))
+    )
+    error_message = "O apply preparatório deve remover as proteções gerenciadas antes do destroy."
   }
 }
 

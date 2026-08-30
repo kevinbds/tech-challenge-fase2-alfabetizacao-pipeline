@@ -16,37 +16,47 @@
   "steps": [
     {
       "id": "build-batch",
-      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
       "args": ["build", "--pull", "--file", "containers/batch.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA", "."]
     },
     {
       "id": "push-batch",
-      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
       "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA"]
     },
     {
       "id": "build-dbt",
-      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
       "args": ["build", "--pull", "--file", "containers/dbt.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt:$COMMIT_SHA", "."]
     },
     {
       "id": "push-dbt",
-      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
       "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt:$COMMIT_SHA"]
     },
     {
       "id": "build-producer",
-      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
       "args": ["build", "--pull", "--file", "containers/producer.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer:$COMMIT_SHA", "."]
     },
     {
       "id": "push-producer",
-      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
       "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer:$COMMIT_SHA"]
     },
     {
+      "id": "build-dataflow",
+      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
+      "args": ["build", "--pull", "--file", "containers/dataflow.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dataflow:$COMMIT_SHA", "."]
+    },
+    {
+      "id": "push-dataflow",
+      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
+      "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dataflow:$COMMIT_SHA"]
+    },
+    {
       "id": "capture-digests",
-      "name": "gcr.io/google.com/cloudsdktool/google-cloud-cli:553.0.0-slim",
+      "name": "gcr.io/google.com/cloudsdktool/google-cloud-cli@sha256:016179f3641ec13de55083342cb6b2018c7ead2e5eefbaff74db14f7d587b5f1",
       "entrypoint": "bash",
       "env": ["REGION=${_REGION}", "REPOSITORY=${_REPOSITORY}", "PROJECT_ID=$PROJECT_ID", "COMMIT_SHA=$COMMIT_SHA", "BUILD_ID=$BUILD_ID"],
       "args": ["cloudbuild/capture-digests.sh"]

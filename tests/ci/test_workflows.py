@@ -3,24 +3,16 @@ from pathlib import Path
 from pydantic import JsonValue, TypeAdapter
 
 JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+JSON_MAPPING: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+JSON_SEQUENCE: TypeAdapter[list[JsonValue]] = TypeAdapter(list[JsonValue])
 
 
 def _mapping(value: JsonValue) -> dict[str, JsonValue]:
-    match value:
-        case dict() as mapping:
-            return mapping
-        case _:
-            message = "expected a mapping"
-            raise AssertionError(message)
+    return JSON_MAPPING.validate_python(value)
 
 
 def _sequence(value: JsonValue) -> list[JsonValue]:
-    match value:
-        case list() as sequence:
-            return sequence
-        case _:
-            message = "expected a sequence"
-            raise AssertionError(message)
+    return JSON_SEQUENCE.validate_python(value)
 
 
 def _load(path: str) -> dict[str, JsonValue]:

@@ -31,7 +31,7 @@ resource "google_storage_bucket" "data" {
   project                     = var.project_id
   name                        = "${var.name_prefix}-${each.value.suffix}"
   location                    = var.location
-  force_destroy               = false
+  force_destroy               = !var.deletion_protection
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   labels                      = var.labels
@@ -53,7 +53,4 @@ resource "google_storage_bucket" "data" {
     }
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
 }

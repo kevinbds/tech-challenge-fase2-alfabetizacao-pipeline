@@ -90,3 +90,9 @@ variable "labels" {
     managed_by  = "terraform"
   }
 }
+
+variable "deletion_protection" {
+  description = "Protege buckets; desative em apply separado antes do destroy autorizado."
+  type        = bool
+  default     = true
+}

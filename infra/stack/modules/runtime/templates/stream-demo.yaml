@@ -195,7 +195,7 @@ execute_demo:
           body:
             overrides:
               containerOverrides:
-                - args: [build, --select, tag:stream_demo]
+                - args: [build, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --select, tag:stream_demo]
                   env:
                     - name: CORRELATION_ID
                       value: $${correlation_id}

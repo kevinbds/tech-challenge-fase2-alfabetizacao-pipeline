@@ -8,9 +8,9 @@ htmlcov/
 .basedpyright/
 target/
 logs/
+dbt/.user.yml
 .env
 *.tfstate
 *.tfstate.*
 .terraform/
 crash.log
-

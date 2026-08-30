@@ -40,6 +40,8 @@ locals {
 
   ci_project_roles = toset([
     "roles/artifactregistry.writer",
+    "roles/cloudbuild.builds.editor",
+    "roles/logging.logWriter",
     "roles/storage.objectViewer",
   ])
 }
@@ -69,7 +71,7 @@ resource "google_storage_bucket" "terraform_state" {
   name                        = var.state_bucket_name
   project                     = var.project_id
   location                    = var.source_dataset_location
-  force_destroy               = false
+  force_destroy               = !var.deletion_protection
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   labels                      = var.labels
@@ -90,16 +92,13 @@ resource "google_storage_bucket" "terraform_state" {
 
   depends_on = [google_project_service.required]
 
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "google_storage_bucket" "artifacts" {
   name                        = var.artifacts_bucket_name
   project                     = var.project_id
   location                    = var.source_dataset_location
-  force_destroy               = false
+  force_destroy               = !var.deletion_protection
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   labels                      = var.labels
@@ -110,9 +109,14 @@ resource "google_storage_bucket" "artifacts" {
 
   depends_on = [google_project_service.required]
 
-  lifecycle {
-    prevent_destroy = true
-  }
+}
+
+resource "google_storage_bucket_iam_member" "ci_artifact_creator" {
+  count = var.github_repository == null ? 0 : 1
+
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.ci.email}"
 }
 
 resource "google_artifact_registry_repository" "pipeline" {
