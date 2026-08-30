@@ -22,18 +22,28 @@ where release_id in (
             and registry.created_at < timestamp_sub(current_timestamp(), interval 30 day)
         )
     )
-    and registry.release_id not in (active.release_id, active.prior_release_id)
+    and registry.release_id != active.release_id
+    and (active.prior_release_id is null or registry.release_id != active.prior_release_id)
 );
-delete from `{{ project_id }}.ops.release_registry`
+delete from `{{ project_id }}.ops.release_registry` as registry
 where (
-    (status = 'failed' and created_at < timestamp_sub(current_timestamp(), interval 7 day))
-    or (status = 'succeeded' and created_at < timestamp_sub(current_timestamp(), interval 30 day))
+    (
+        registry.status = 'failed'
+        and registry.created_at < timestamp_sub(current_timestamp(), interval 7 day)
+    )
+    or (
+        registry.status = 'succeeded'
+        and registry.created_at < timestamp_sub(current_timestamp(), interval 30 day)
+    )
 )
-and release_id not in (
-    select release_id from `{{ project_id }}.ops.active_release`
-    where singleton_key = true
-    union all
-    select prior_release_id from `{{ project_id }}.ops.active_release`
-    where singleton_key = true
+and not exists (
+    select 1
+    from `{{ project_id }}.ops.active_release` as active
+    where
+        active.singleton_key = true
+        and (
+            registry.release_id = active.release_id
+            or registry.release_id = active.prior_release_id
+        )
 );
 commit transaction;
