@@ -96,6 +96,10 @@ def _translate(
     return translated
 
 
+def translate_bigquery_sql(sql: str, parameters: Mapping[str, ScriptScalar]) -> str:
+    return _translate(sql, {}, parameters, 0)
+
+
 def _assert_script(passed: tuple[bool] | None, message: str) -> None:
     if passed != (True,):
         raise ScriptAssertionError(message=message)
