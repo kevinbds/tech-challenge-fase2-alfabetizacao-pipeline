@@ -1,0 +1,124 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alfabetizacao-pipeline"
+version = "0.1.0"
+description = "Pipeline híbrido de indicadores de alfabetização para o Tech Challenge FIAP"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "pydantic>=2.11,<3",
+    "pydantic-settings>=2.10,<3",
+    "rich>=14,<15",
+    "typer>=0.16,<1",
+]
+
+[project.scripts]
+alfabetizacao = "alfabetizacao_pipeline.cli:app"
+
+[dependency-groups]
+cloud = [
+    "google-cloud-bigquery>=3.35,<4",
+    "google-cloud-billing-budgets>=1.16,<2",
+    "google-cloud-monitoring>=2.27,<3",
+    "google-cloud-pubsub>=2.31,<3",
+    "google-cloud-storage>=2.19,<3.2",
+    "google-cloud-workflows>=1.18,<2",
+    "pyarrow>=18,<21",
+]
+dataflow = [
+    "apache-beam[gcp]==2.75.0",
+    "betterproto==2.0.0b6",
+    "fastavro>=1.12,<2",
+]
+dbt = [
+    "dbt-bigquery>=1.10,<2",
+]
+quality = [
+    "jsonschema>=4.25,<5",
+    "sqlfluff>=3.4,<4",
+    "sqlfluff-templater-dbt>=3.4,<4",
+]
+dev = [
+    "basedpyright>=1.31,<2",
+    "hypothesis>=6.138,<7",
+    "pytest>=8.4,<9",
+    "pytest-cov>=6.2,<7",
+    "pytest-randomly>=4,<5",
+    "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alfabetizacao_pipeline"]
+
+[tool.basedpyright]
+typeCheckingMode = "all"
+pythonVersion = "3.13"
+pythonPlatform = "All"
+include = ["src", "tests"]
+exclude = ["**/__pycache__", "**/.venv", "**/build", "**/dist"]
+reportUnusedCallResult = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUnusedVariable = "error"
+reportMissingParameterType = "error"
+reportPrivateUsage = "error"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",
+    "ISC001",
+    "D100",
+    "D104",
+    "D203",
+    "D213",
+    "CPY001",
+    "FBT001",
+    "FBT002",
+    "TD002",
+    "TD003",
+    "FIX002",
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S603", "S607", "ARG", "PLR2004", "SLF001", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-config", "--strict-markers"]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
+show_missing = true
+
+[tool.sqlfluff.core]
+dialect = "bigquery"
+templater = "dbt"
+max_line_length = 100
