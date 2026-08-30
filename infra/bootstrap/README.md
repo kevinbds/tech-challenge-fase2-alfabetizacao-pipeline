@@ -9,3 +9,8 @@ Este root começa com estado local. Ele habilita APIs, consulta a localização 
 5. No stack, execute `terraform init -migrate-state -backend-config=backend.hcl` somente na migração controlada. Interrupção antes da confirmação não altera o estado remoto; depois, valide `terraform state list` nos dois lados antes de retomar.
 
 O `github_repository` fica nulo até o usuário fornecer `owner/repo`. A condição OIDC impede que outro repositório assuma a conta de CI. `roles/billing.costsManager` é concedida somente no billing account informado, nunca no projeto.
+
+Os buckets nascem com `deletion_protection=true`. No teardown autorizado, só
+desative a variável em apply separado depois que o stack tiver sido destruído;
+então revise o plano de destroy do bootstrap. Não remova recursos do state para
+contornar essa sequência.

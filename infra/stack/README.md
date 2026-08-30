@@ -16,8 +16,13 @@ O Terraform cria buckets, datasets/tabelas, external tables, identidades, Cloud 
 
 1. Criar/selecionar projeto com billing e autenticar o deployer.
 2. Aplicar o bootstrap após revisar o plano.
-3. Gerar e subir os seis Parquet zero-row em URIs imutáveis e publicar as quatro imagens por digest.
+3. Gerar e subir os seis Parquet zero-row em URIs imutáveis, publicar as quatro imagens por digest e preencher `release_git_sha` com o SHA emitido pelo mesmo build.
 4. Migrar o backend, rodar `plan` e autorizar o stack.
 5. Executar o demo; habilitar o Scheduler somente depois do primeiro lote promovido.
 
 O budget é apenas alerta. `BRL` recebe o default acadêmico de 50; qualquer outra moeda exige valor explícito. O cap de consulta permanece em 25 GiB e o demo Dataflow limita workers a 1–2.
+
+No teardown autorizado, mantenha `deletion_protection=true` até preservar as
+evidências e encerrar execuções. Faça um apply separado com a variável `false`,
+revise a retirada das proteções e somente depois gere o plano de destroy. O
+procedimento completo e a ordem stack → bootstrap estão em `docs/runbooks.md`.

@@ -32,11 +32,12 @@ state é a fonte de verdade.
 
 ## Build com digest
 
-A imagem usada pelo Job e pelo Flex Template deve ser identificada por digest,
-não por tag mutável. O pipeline de build deve imprimir o digest e salvá-lo no
-arquivo de variáveis do stack. Faça o plan do stack novamente e confirme que o
-digest aparece na mudança esperada. Se build falhar ou for cancelado, descarte o
-digest parcial; não reutilize tag "latest".
+Cada imagem usada pelos Jobs e pelo Flex Template deve ser identificada por
+digest, não por tag mutável. Copie do `image-digests.json` o `git_sha` para
+`release_git_sha` e as quatro referências imutáveis para os campos de imagem do
+stack. Faça o plan novamente e confirme que esses valores aparecem na mudança
+esperada. Se o build falhar ou for cancelado, descarte o arquivo parcial; não
+reutilize tag "latest".
 
 ## Batch mensal ou sob demanda
 
@@ -99,7 +100,21 @@ CANCELLED, FAILED ou timeout é falha da demo, não sucesso parcial.
 ## Teardown após a avaliação
 
 Confirme primeiro que a equipe preservou as evidências permitidas e que não há
-execução ativa. Rode "terraform plan -destroy" em cada root, revise recursos
-protegidos e só então execute "terraform destroy" com autorização. Retenção de
-Bronze não substitui destroy pós-avaliação. Não execute destroy em state, bucket
-ou projeto diferentes dos confirmados no plano.
+execução ativa. O teardown usa duas fases explícitas, sempre na ordem stack e
+depois bootstrap:
+
+1. no stack, revise e aplique somente a retirada das proteções:
+
+    terraform -chdir=infra/stack plan -var-file=terraform.tfvars -var=deletion_protection=false
+    terraform -chdir=infra/stack apply -var-file=terraform.tfvars -var=deletion_protection=false
+
+2. ainda com a mesma variável, revise `plan -destroy` e autorize o `destroy` do
+   stack;
+3. no bootstrap, repita o apply preparatório com
+   `-var=deletion_protection=false`, confirme que o stack já foi removido e só
+   então revise e execute o destroy do bootstrap.
+
+`deletion_protection` nasce `true`; não tente contornar a fase preparatória com
+`state rm`, exclusão manual ou `-reconfigure`. Retenção de Bronze não substitui
+destroy pós-avaliação. Não execute destroy em state, bucket ou projeto diferentes
+dos confirmados nos dois planos.
