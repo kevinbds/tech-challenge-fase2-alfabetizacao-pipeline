@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "image_reference_pattern": "^.+@sha256:[0-9a-f]{64}$",
+  "require_git_sha": true,
+  "require_build_id": true,
+  "provenance": {"required": true, "sbom_when_available": true},
+  "teardown": {
+    "requires_confirmation": true,
+    "drain_streaming_first": true,
+    "allowed_terminal_state": "DRAINED",
+    "preserve_state_backup": true
+  },
+  "forbidden_log_fields": ["id_aluno", "access_token", "refresh_token", "private_key", "credentials_json"]
+}
