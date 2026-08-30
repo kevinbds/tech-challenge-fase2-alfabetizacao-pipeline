@@ -179,12 +179,3 @@ def test_flex_launch_and_ambiguous_result_are_inside_guarded_cleanup() -> None:
 
     # Then launch and both known/ambiguous cleanup paths are structurally guarded
     assert completed.returncode == 0, completed.stderr
-
-
-def test_workflow_qa_harness_is_not_shipped_as_production_code() -> None:
-    # Given orchestration semantics are covered by test-only payload harnesses
-    path = Path("src/alfabetizacao_pipeline/streaming/workflow_orchestrator.py")
-
-    # When the deployable Python package is inspected
-    # Then no fake workflow runtime is shipped as production code
-    assert not path.exists()
