@@ -76,6 +76,16 @@ resource "google_cloud_run_v2_job" "job" {
         }
 
         env {
+          name  = "GCP_PROJECT_ID"
+          value = var.project_id
+        }
+
+        env {
+          name  = "DBT_LOCATION"
+          value = var.data_location
+        }
+
+        env {
           name  = "ALFABETIZACAO_MAX_BYTES_BILLED"
           value = tostring(var.maximum_bytes_billed)
         }

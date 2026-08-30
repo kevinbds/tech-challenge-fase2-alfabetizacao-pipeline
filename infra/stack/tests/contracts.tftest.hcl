@@ -7,7 +7,7 @@ mock_provider "google" {
 variables {
   project_id            = "fiap-fase2-test"
   billing_account_id    = "000000-000000-000000"
-  data_location         = "US"
+  data_location         = "southamerica-east1"
   region                = "southamerica-east1"
   name_prefix           = "fiap-fase2-test"
   artifacts_bucket_name = "fiap-fase2-test-artifacts"
@@ -136,10 +136,16 @@ run "platform_contract" {
       output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_GCP_PROJECT_ID"] == "fiap-fase2-test" &&
       output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_MAX_BYTES_BILLED"] == "26843545600" &&
       output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_GIT_SHA"] == "0123456789abcdef0123456789abcdef01234567" &&
-      output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_IMAGE_DIGEST"] == "us-docker.pkg.dev/fiap-fase2-test/pipeline/batch@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" &&
-      !contains(keys(output.runtime_entrypoint_contract.jobs["batch"].env), "GCP_PROJECT_ID")
+      output.runtime_entrypoint_contract.jobs["batch"].env["ALFABETIZACAO_IMAGE_DIGEST"] == "us-docker.pkg.dev/fiap-fase2-test/pipeline/batch@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     )
-    error_message = "O runtime deve usar exatamente o prefixo lido por AppSettings."
+    error_message = "O job Batch deve receber o ambiente prefixado lido por AppSettings."
+  }
+  assert {
+    condition = (
+      output.runtime_entrypoint_contract.jobs["dbt"].env["GCP_PROJECT_ID"] == "fiap-fase2-test" &&
+      output.runtime_entrypoint_contract.jobs["dbt"].env["DBT_LOCATION"] == "southamerica-east1"
+    )
+    error_message = "O job dbt deve receber projeto e localização descobertos pelo stack."
   }
   assert {
     condition = (

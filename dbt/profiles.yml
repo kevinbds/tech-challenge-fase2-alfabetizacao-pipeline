@@ -10,6 +10,6 @@ alfabetizacao_medallion:
       method: oauth
       project: "{{ env_var('GCP_PROJECT_ID') }}"
       dataset: alfabetizacao
-      location: US
+      location: "{{ env_var('DBT_LOCATION') }}"
       threads: 4
       priority: interactive

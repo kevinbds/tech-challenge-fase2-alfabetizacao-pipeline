@@ -3,6 +3,7 @@ module "runtime" {
 
   project_id               = var.project_id
   region                   = var.region
+  data_location            = var.data_location
   name_prefix              = var.name_prefix
   images                   = { batch = var.batch_image, dbt = var.dbt_image, producer = var.producer_image, dataflow = var.dataflow_image }
   service_account_emails   = { for key, account in google_service_account.runtime : key => account.email }
