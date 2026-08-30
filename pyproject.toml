@@ -44,6 +44,7 @@ quality = [
 dev = [
     "basedpyright>=1.31,<2",
     "hypothesis>=6.138,<7",
+    "pyarrow-stubs>=20.0.0.20260819,<21",
     "pytest>=8.4,<9",
     "pytest-cov>=6.2,<7",
     "pytest-randomly>=4,<5",
@@ -120,5 +121,5 @@ show_missing = true
 
 [tool.sqlfluff.core]
 dialect = "bigquery"
-templater = "dbt"
+templater = "jinja"
 max_line_length = 100

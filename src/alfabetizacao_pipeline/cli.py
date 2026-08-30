@@ -4,8 +4,11 @@ import typer
 from pydantic import ValidationError
 
 from alfabetizacao_pipeline import __version__
+from alfabetizacao_pipeline.batch.commands import app as batch_app
 from alfabetizacao_pipeline.config import AppSettings, ConfigCheck
 from alfabetizacao_pipeline.errors import ExitCode
+from alfabetizacao_pipeline.releases.commands import app as release_app
+from alfabetizacao_pipeline.schema_reference.commands import app as schema_reference_app
 from alfabetizacao_pipeline.types import OutputFormat
 
 app = typer.Typer(
@@ -19,6 +22,10 @@ config_app = typer.Typer(
     rich_markup_mode=None,
 )
 app.add_typer(config_app, name="config")
+app.add_typer(batch_app, name="batch")
+app.add_typer(release_app, name="release")
+app.add_typer(release_app, name="releases")
+app.add_typer(schema_reference_app, name="schema-reference")
 
 
 @app.command("version")
