@@ -5,7 +5,8 @@
     "description": "Pipeline temporário da demonstração streaming",
     "parameters": [
       {"name": "input_subscription", "label": "Dataflow subscription", "isOptional": false},
-      {"name": "output_dataset", "label": "BigQuery output dataset", "isOptional": false},
+      {"name": "valid_table", "label": "BigQuery valid staging table", "isOptional": false},
+      {"name": "quarantine_table", "label": "BigQuery quarantine table", "isOptional": false},
       {"name": "write_method", "label": "BigQuery write method", "isOptional": false}
     ]
   },

@@ -1,13 +1,14 @@
-FROM apache/beam_python3.13_sdk:2.75.0
+FROM gcr.io/dataflow-templates-base/python313-template-launcher-base@sha256:3b739eee1143263b8f4740beb0b18a28e511533ebb8b1577bd3fdf2b05bd223d
 
 ENV FLEX_TEMPLATE_PYTHON_PY_FILE=/opt/pipeline/beam_entrypoint.py \
     FLEX_TEMPLATE_PYTHON_REQUIREMENTS_FILE=/opt/pipeline/requirements-dataflow.txt \
     DATAFLOW_ADDITIONAL_EXPERIMENTS=enable_portable_runner
 
 WORKDIR /opt/pipeline
-COPY src/alfabetizacao_pipeline/streaming ./alfabetizacao_pipeline/streaming
-COPY schemas/events ./schemas/events
+COPY containers/dataflow/beam_entrypoint.py ./beam_entrypoint.py
+COPY containers/dataflow/requirements-dataflow.txt ./requirements-dataflow.txt
+COPY src/alfabetizacao_pipeline ./alfabetizacao_pipeline
 
-USER 65532:65532
+RUN python -m pip install --no-cache-dir -r requirements-dataflow.txt
 
-ENTRYPOINT ["/opt/apache/beam/boot"]
+ENV PYTHONPATH=/opt/pipeline
