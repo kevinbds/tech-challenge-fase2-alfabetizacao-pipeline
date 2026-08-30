@@ -30,7 +30,7 @@ def _snapshot(
     return pointer, registry
 
 
-def test_runner_executes_real_interleaving_before_statement(tmp_path: Path) -> None:
+def test_runner_executes_statement_hook(tmp_path: Path) -> None:
     script = tmp_path / "hook.sql"
     _ = script.write_text(
         "begin transaction; update state set value = 2; commit transaction;",
@@ -59,7 +59,7 @@ def test_runner_executes_real_interleaving_before_statement(tmp_path: Path) -> N
     assert len(calls) == 3
 
 
-def test_promotion_stale_pointer_interleaving_rolls_back_every_mutation() -> None:
+def test_promotion_stale_pointer_cas_rolls_back_every_mutation() -> None:
     with release_database() as connection:
         insert_quality_results(connection)
         before = _snapshot(connection)
@@ -127,14 +127,19 @@ def test_evaluate_persist_then_promote_uses_produced_catalog() -> None:
         assert connection.execute(
             "select count(*), count(distinct rule_id) from release_results"
         ).fetchone() == (13, 13)
+        assert connection.execute(
+            "select release_id, status from release_registry order by release_id"
+        ).fetchall() == [("release-a", "inactive"), ("release-b", "active")]
 
 
 def test_evaluate_persisted_critical_rule_blocks_promotion() -> None:
     with release_database() as connection:
-        persist_quality_results(
-            connection,
-            overrides={"conflicting_payload_variants": 2},
+        persist_quality_results(connection)
+        _ = connection.execute(
+            """insert into quarantine_conflicting_duplicates values
+            ('release-b', 'student-key', 'payload-a')"""
         )
+        persist_quality_results(connection)
         before = _snapshot(connection)
         with pytest.raises(ScriptAssertionError):
             run_bigquery_script(
@@ -213,7 +218,7 @@ def test_rollback_rejects_invalid_pointer_or_registry_without_mutation(
         assert _snapshot(connection) == before
 
 
-def test_rollback_stale_pointer_interleaving_rolls_back_every_mutation() -> None:
+def test_rollback_stale_pointer_cas_rolls_back_every_mutation() -> None:
     with release_database() as connection:
         _ = connection.execute("update active_release set prior_release_id = 'release-b'")
         _ = connection.execute(

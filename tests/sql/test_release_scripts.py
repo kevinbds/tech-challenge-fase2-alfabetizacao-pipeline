@@ -41,17 +41,20 @@ def release_database() -> duckdb.DuckDBPyConnection:
         );
         insert into active_release values (true, 'release-a', null, timestamp '2024-01-01');
         create table release_registry(
-            release_id varchar, status varchar, created_at timestamp, promoted_at timestamp
+            release_id varchar, status varchar, created_at timestamp, promoted_at timestamp,
+            completed_at timestamp
         );
         insert into release_registry values
-            ('release-a', 'active', timestamp '2024-01-01', timestamp '2024-01-01'),
-            ('release-b', 'succeeded', timestamp '2024-02-01', null);
+            ('release-a', 'active', timestamp '2024-01-01',
+             timestamp '2024-01-01', current_timestamp),
+            ('release-b', 'succeeded', timestamp '2024-02-01', null, current_timestamp);
         create table release_results(
             release_id varchar,
             rule_id varchar,
             metric_value double,
             severity varchar,
-            action varchar
+            action varchar,
+            details varchar
         );
         create table release_files(release_id varchar, file_name varchar);
         """
@@ -76,7 +79,32 @@ def insert_quality_results(
         for rule in MANDATORY_RULES
         if rule != omitted_rule
     ]
-    _ = connection.executemany("insert into release_results values (?, ?, ?, ?, ?)", rows)
+    rows_with_details = [(*row, "test_fixture") for row in rows]
+    _ = connection.executemany(
+        "insert into release_results values (?, ?, ?, ?, ?, ?)", rows_with_details
+    )
+
+
+def test_promotion_rejects_duplicate_or_extra_quality_rows_before_dml() -> None:
+    with release_database() as connection:
+        insert_quality_results(connection)
+        _ = connection.execute(
+            """insert into release_results values
+            ('release-b', 'required_keys', 0, 'pass', 'promote', 'duplicate')"""
+        )
+        before = connection.execute(
+            "select release_id, prior_release_id from active_release"
+        ).fetchone()
+        with pytest.raises(ScriptAssertionError):
+            run_bigquery_script(
+                connection,
+                PROMOTE,
+                options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+            )
+        assert (
+            connection.execute("select release_id, prior_release_id from active_release").fetchone()
+            == before
+        )
 
 
 @pytest.mark.parametrize("candidate", ["missing-release", "release-a"])
@@ -137,7 +165,8 @@ def test_promotion_rejects_critical_and_promotes_complete_candidate() -> None:
 def test_promotion_rejects_candidate_with_duplicate_registry_rows() -> None:
     with release_database() as connection:
         _ = connection.execute(
-            "insert into release_registry values ('release-b', 'failed', date '2024-02-02', null)"
+            """insert into release_registry values
+            ('release-b', 'failed', date '2024-02-02', null, null)"""
         )
         insert_quality_results(connection)
         with pytest.raises(ScriptAssertionError):
@@ -223,10 +252,10 @@ def test_cleanup_with_null_prior_preserves_active_and_deletes_only_eligible() ->
         _ = connection.execute(
             """
             insert into release_registry values
-                ('failed-old', 'failed', current_timestamp - interval 8 day, null),
-                ('success-old', 'succeeded', current_timestamp - interval 31 day, null),
-                ('failed-new', 'failed', current_timestamp - interval 6 day, null),
-                ('success-new', 'succeeded', current_timestamp - interval 29 day, null);
+                ('failed-old', 'failed', current_timestamp - interval 8 day, null, null),
+                ('success-old', 'succeeded', current_timestamp - interval 31 day, null, null),
+                ('failed-new', 'failed', current_timestamp - interval 6 day, null, null),
+                ('success-new', 'succeeded', current_timestamp - interval 29 day, null, null);
             insert into release_files values
                 ('release-a', 'active.csv'), ('failed-old', 'failed.csv'),
                 ('success-old', 'success.csv'), ('failed-new', 'new.csv');

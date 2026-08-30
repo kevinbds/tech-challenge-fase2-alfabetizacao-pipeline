@@ -65,7 +65,7 @@ def _translate(
     row_count: int,
 ) -> str:
     translated = re.sub(
-        r"`\{\{ project_id \}\}\.(?:ops|quality)\.([a-z_]+)`",
+        r"`\{\{ project_id \}\}\.(?:ops|quality|silver|silver_restricted|staging|gold)\.([a-z_]+)`",
         r"\1",
         statement,
     )
@@ -77,6 +77,12 @@ def _translate(
     )
     translated = re.sub(
         r"current_timestamp\(\)", "current_timestamp", translated, flags=re.IGNORECASE
+    )
+    translated = re.sub(
+        r"date_diff\(current_date\(\),\s*date\(([^)]+)\),\s*day\)",
+        r"date_diff('day', cast(\1 as date), current_date)",
+        translated,
+        flags=re.IGNORECASE,
     )
     translated = re.sub(r"select\s+as\s+struct", "select", translated, flags=re.IGNORECASE)
     translated = translated.replace("@@row_count", str(row_count))

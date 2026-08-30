@@ -77,8 +77,6 @@ set quality_rows = (
     from `{{ project_id }}.quality.release_results`
     where release_id = candidate_release
 );
-assert quality_rows > 0 as 'candidate release has no quality results';
-
 set required_rules_seen = (
     select count(distinct rule_id)
     from `{{ project_id }}.quality.release_results`
@@ -100,7 +98,9 @@ set required_rules_seen = (
             'conflicting_duplicate'
         )
 );
-assert required_rules_seen = 13 as 'candidate release is missing mandatory quality rules';
+assert (
+    quality_rows = 13 and required_rules_seen = 13
+) as 'candidate release must have exactly one result for each mandatory quality rule';
 
 set critical_failures = (
     select count(*) from `{{ project_id }}.quality.release_results`

@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
@@ -7,127 +6,194 @@ import duckdb
 from tests.sql.bigquery_script_runner import ScriptRunOptions, run_bigquery_script
 
 EVALUATE_RELEASE: Final = Path("sql/quality/evaluate_release.sql")
-MetricValue = str | int | float
 
-PASSING_METRICS: Final[Mapping[str, MetricValue]] = {
-    "required_key_null_rate": 0.0,
-    "duplicate_key_rate": 0.0,
-    "relationship_rate": 100.0,
-    "gold_core_null_rate": 0.0,
-    "optional_null_delta_pp": 5.0,
-    "out_of_range_rows": 0,
-    "negative_rows": 0,
-    "invalid_proportion_rows": 0,
-    "repeated_rate_percent": 0.01,
-    "current_row_count": 80,
-    "previous_row_count": 100,
-    "days_since_success": 35,
-    "identical_copies": 1,
-    "identical_payload_hashes": 1,
-    "conflicting_payload_variants": 1,
-}
+
+def install_release_data(connection: duckdb.DuckDBPyConnection) -> None:
+    _ = connection.execute(
+        """
+        create table silver_municipio(
+            release_id varchar, ano int, id_municipio varchar, rede varchar,
+            taxa_alfabetizacao double, media_portugues double,
+            proporcao_aluno_nivel_0 double, proporcao_aluno_nivel_1 double,
+            proporcao_aluno_nivel_2 double, proporcao_aluno_nivel_3 double,
+            proporcao_aluno_nivel_4 double, proporcao_aluno_nivel_5 double,
+            proporcao_aluno_nivel_6 double, proporcao_aluno_nivel_7 double,
+            proporcao_aluno_nivel_8 double
+        );
+        insert into silver_municipio values
+            ('release-a', 2024, '3550308', 'municipal', 70, 200,
+             10, 10, 10, 10, 10, 10, 10, 10, 20),
+            ('release-b', 2024, '3550308', 'municipal', 72, 205,
+             10, 10, 10, 10, 10, 10, 10, 10, 20);
+        create table silver_uf as select
+            release_id, ano, 'SP'::varchar as sigla_uf, rede,
+            taxa_alfabetizacao, media_portugues,
+            proporcao_aluno_nivel_0, proporcao_aluno_nivel_1,
+            proporcao_aluno_nivel_2, proporcao_aluno_nivel_3,
+            proporcao_aluno_nivel_4, proporcao_aluno_nivel_5,
+            proporcao_aluno_nivel_6, proporcao_aluno_nivel_7,
+            proporcao_aluno_nivel_8
+        from silver_municipio;
+        create table silver_meta_alfabetizacao_municipio as select
+            release_id, ano, id_municipio, rede, taxa_alfabetizacao,
+            90::double as percentual_participacao,
+            70::double as meta_alfabetizacao_2024,
+            71::double as meta_alfabetizacao_2025,
+            72::double as meta_alfabetizacao_2026,
+            73::double as meta_alfabetizacao_2027,
+            74::double as meta_alfabetizacao_2028,
+            75::double as meta_alfabetizacao_2029,
+            76::double as meta_alfabetizacao_2030
+        from silver_municipio;
+        create table silver_meta_alfabetizacao_uf as select
+            release_id, ano, 'SP'::varchar as sigla_uf, rede,
+            taxa_alfabetizacao, percentual_participacao,
+            meta_alfabetizacao_2024, meta_alfabetizacao_2025,
+            meta_alfabetizacao_2026, meta_alfabetizacao_2027,
+            meta_alfabetizacao_2028, meta_alfabetizacao_2029,
+            meta_alfabetizacao_2030
+        from silver_meta_alfabetizacao_municipio;
+        create table silver_meta_alfabetizacao_brasil as select
+            release_id, ano, rede, taxa_alfabetizacao, percentual_participacao,
+            meta_alfabetizacao_2024, meta_alfabetizacao_2025,
+            meta_alfabetizacao_2026, meta_alfabetizacao_2027,
+            meta_alfabetizacao_2028, meta_alfabetizacao_2029,
+            meta_alfabetizacao_2030
+        from silver_meta_alfabetizacao_municipio;
+        create table silver_alunos(
+            release_id varchar, ano int, id_municipio varchar, id_escola varchar,
+            id_aluno varchar, rede varchar, proficiencia double, peso_aluno double
+        );
+        insert into silver_alunos values
+            ('release-a', 2024, '3550308', 'school-1', 'student-a', 'municipal', 200, 1),
+            ('release-b', 2024, '3550308', 'school-1', 'student-b', 'municipal', 210, 1);
+        create table stg_alunos as select * from silver_alunos;
+        create table indicador_municipio as select
+            release_id, ano, id_municipio, rede, taxa_alfabetizacao,
+            'Sao Paulo'::varchar as nome_municipio, 'SP'::varchar as sigla_uf
+        from silver_municipio;
+        create table comparativo_meta_resultado as select
+            release_id, ano as ano_resultado, 'municipio'::varchar as nivel_geografico,
+            id_municipio as id_geografia, rede, taxa_alfabetizacao as taxa_resultado,
+            70::double as meta_alfabetizacao
+        from silver_municipio;
+        create table audit_identical_duplicates(release_id varchar, copies int);
+        create table quarantine_conflicting_duplicates(
+            release_id varchar, business_key_hash varchar, row_hash varchar
+        );
+        """
+    )
 
 
 def create_quality_database() -> duckdb.DuckDBPyConnection:
     connection = duckdb.connect(":memory:")
     _ = connection.execute(
         """
+        create table active_release(
+            singleton_key boolean, release_id varchar, prior_release_id varchar,
+            promoted_at timestamp
+        );
+        insert into active_release values (true, 'release-a', null, current_timestamp);
+        create table release_registry(
+            release_id varchar, status varchar, created_at timestamp,
+            promoted_at timestamp, completed_at timestamp
+        );
+        insert into release_registry values
+            ('release-a', 'active', current_timestamp, current_timestamp, current_timestamp),
+            ('release-b', 'succeeded', current_timestamp, null, current_timestamp);
         create table release_results(
-            release_id varchar,
-            rule_id varchar,
-            metric_value double,
-            severity varchar,
-            action varchar
-        )
+            release_id varchar, rule_id varchar, metric_value double,
+            severity varchar, action varchar, details varchar
+        );
         """
     )
+    install_release_data(connection)
     return connection
 
 
 def persist_quality_results(
-    connection: duckdb.DuckDBPyConnection,
-    *,
-    release_id: str = "release-b",
-    overrides: Mapping[str, MetricValue] | None = None,
+    connection: duckdb.DuckDBPyConnection, *, release_id: str = "release-b"
 ) -> None:
-    metrics = PASSING_METRICS if overrides is None else {**PASSING_METRICS, **overrides}
+    tables = connection.execute(
+        "select count(*) from information_schema.tables where table_name = 'silver_municipio'"
+    ).fetchone()
+    if tables == (0,):
+        install_release_data(connection)
     run_bigquery_script(
         connection,
         EVALUATE_RELEASE,
-        options=ScriptRunOptions(parameters={"release_id": release_id, **metrics}),
+        options=ScriptRunOptions(parameters={"release_id": release_id}),
     )
 
 
 def persist_passing_quality_results(
-    connection: duckdb.DuckDBPyConnection,
-    *,
-    release_id: str = "release-b",
+    connection: duckdb.DuckDBPyConnection, *, release_id: str = "release-b"
 ) -> None:
     persist_quality_results(connection, release_id=release_id)
 
 
-def test_evaluate_release_persists_all_catalog_rules_with_exact_decisions() -> None:
-    parameters: dict[str, MetricValue] = {
-        "release_id": "release-b",
-        **PASSING_METRICS,
-        "duplicate_key_rate": 0.2,
-        "gold_core_null_rate": 0.1,
-        "optional_null_delta_pp": 6.0,
-        "out_of_range_rows": 2,
-        "invalid_proportion_rows": 1,
-        "repeated_rate_percent": 0.25,
-        "current_row_count": 79,
-        "days_since_success": 36,
-        "identical_copies": 3,
-        "conflicting_payload_variants": 2,
-    }
+def test_evaluator_calculates_exact_catalog_from_release_tables() -> None:
     with create_quality_database() as connection:
-        run_bigquery_script(
-            connection,
-            EVALUATE_RELEASE,
-            options=ScriptRunOptions(parameters=parameters),
-        )
-
-        actual = connection.execute(
-            """
-            select rule_id, metric_value, severity, action
-            from release_results
-            where release_id = 'release-b'
-            order by rule_id
-            """
-        ).fetchall()
-
-    assert actual == [
-        ("conflicting_duplicate", 2.0, "critical", "quarantine_and_block"),
-        ("gold_core_nulls", 0.1, "critical", "block_promotion"),
-        ("identical_duplicate", 3.0, "warning", "deduplicate_and_alert"),
-        ("non_negative_measurements", 0.0, "pass", "promote"),
-        ("optional_null_delta", 6.0, "warning", "continue_with_alert"),
-        ("partition_volume", 21.0, "warning", "continue_with_alert"),
-        ("percentage_ranges", 2.0, "critical", "quarantine_and_block"),
-        ("pipeline_freshness", 36.0, "critical", "block_promotion"),
-        ("proportions_sum", 1.0, "critical", "quarantine_and_block"),
-        ("relationships", 100.0, "pass", "promote"),
-        ("repeated_evaluation_or_target_rate", 0.25, "warning", "continue_with_alert"),
-        ("required_keys", 0.0, "pass", "promote"),
-        ("uniqueness_after_quarantine", 0.2, "critical", "quarantine_and_block"),
-    ]
-
-
-def test_evaluate_release_rerun_replaces_the_release_atomically() -> None:
-    with create_quality_database() as connection:
-        _ = connection.execute(
-            "insert into release_results values ('release-b', 'stale', 99, 'critical', 'block')"
-        )
-        persist_passing_quality_results(connection)
-        persist_passing_quality_results(connection)
-
+        persist_quality_results(connection)
         actual = connection.execute(
             """
             select count(*), count(distinct rule_id),
-                   count(*) filter (where severity = 'pass')
+                   count(*) filter (where severity = 'critical')
             from release_results where release_id = 'release-b'
             """
         ).fetchone()
+        repeated = connection.execute(
+            """
+            select metric_value, severity, details from release_results
+            where rule_id = 'repeated_evaluation_or_target_rate'
+            """
+        ).fetchone()
+    assert actual == (13, 13, 0)
+    assert repeated == (0.0, "pass", "stg_alunos_pre_deduplication")
 
-    assert actual == (13, 13, 13)
+
+def test_source_defects_change_measured_results_without_metric_parameters() -> None:
+    with create_quality_database() as connection:
+        _ = connection.execute(
+            "insert into stg_alunos select * from stg_alunos where release_id = 'release-b'"
+        )
+        _ = connection.execute(
+            "update silver_municipio set taxa_alfabetizacao = 101 where release_id = 'release-b'"
+        )
+        _ = connection.execute(
+            """update silver_meta_alfabetizacao_brasil
+            set meta_alfabetizacao_2030 = -1 where release_id = 'release-b'"""
+        )
+        persist_quality_results(connection)
+        actual = connection.execute(
+            """
+            select rule_id, severity from release_results
+            where rule_id in (
+                'non_negative_measurements', 'percentage_ranges',
+                'repeated_evaluation_or_target_rate'
+            )
+            order by rule_id
+            """
+        ).fetchall()
+    assert actual == [
+        ("non_negative_measurements", "critical"),
+        ("percentage_ranges", "critical"),
+        ("repeated_evaluation_or_target_rate", "critical"),
+    ]
+
+
+def test_missing_baseline_is_an_explicit_warning() -> None:
+    with create_quality_database() as connection:
+        _ = connection.execute("update active_release set release_id = 'missing-baseline'")
+        persist_quality_results(connection)
+        actual = connection.execute(
+            """
+            select rule_id, severity, details from release_results
+            where rule_id in ('optional_null_delta', 'partition_volume')
+            order by rule_id
+            """
+        ).fetchall()
+    assert actual == [
+        ("optional_null_delta", "warning", "baseline_missing"),
+        ("partition_volume", "warning", "baseline_missing"),
+    ]
