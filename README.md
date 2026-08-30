@@ -147,7 +147,7 @@ qualquer ação na cloud, revise o plano sem aplicar:
 
 ```bash
 terraform -chdir=infra/bootstrap init
-terraform -chdir=infra/bootstrap plan -var-file=example.tfvars
+terraform -chdir=infra/bootstrap plan -var-file=terraform.tfvars
 ```
 
 que reúne a única lista de ações que dependem de pessoa, conta cloud ou acesso

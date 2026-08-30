@@ -6,21 +6,24 @@ provisionada. Execute somente depois de cumprir
 
 ## Bootstrap e migração de estado
 
-1. copie o exemplo de variáveis sem colocar segredo no Git;
+1. copie `infra/bootstrap/terraform.tfvars.example` para o arquivo local
+   ignorado `infra/bootstrap/terraform.tfvars`, sem colocar segredo no Git;
 2. autentique a identidade aprovada no projeto GCP;
 3. valide e planeje o root inicial:
 
     terraform -chdir=infra/bootstrap init
     terraform -chdir=infra/bootstrap fmt -check
     terraform -chdir=infra/bootstrap validate
-    terraform -chdir=infra/bootstrap plan -var-file=example.tfvars
+    terraform -chdir=infra/bootstrap plan -var-file=terraform.tfvars
 
 4. após autorização, aplique o bootstrap;
-5. confirme o bucket de estado e execute a migração solicitada pelo Terraform:
+5. confirme o bucket de estado, copie `infra/stack/terraform.tfvars.example`
+   para `infra/stack/terraform.tfvars` e execute a migração solicitada pelo
+   Terraform:
 
     terraform -chdir=infra/bootstrap init -migrate-state
     terraform -chdir=infra/stack init
-    terraform -chdir=infra/stack plan -var-file=example.tfvars
+    terraform -chdir=infra/stack plan -var-file=terraform.tfvars
 
 Se a migração for interrompida, não apague state local ou bucket. Rode novamente
 "terraform init -migrate-state", confira o backend e compare o plano antes de
@@ -37,10 +40,10 @@ digest parcial; não reutilize tag "latest".
 
 ## Batch mensal ou sob demanda
 
-    uv run alfabetizacao source inspect --format json
-    uv run alfabetizacao batch plan --dry-run --format json
-    uv run alfabetizacao batch run --dry-run --format json
-    uv run alfabetizacao release select --format json
+    uv run alfabetizacao batch source inspect --source municipio --demo --format json
+    uv run alfabetizacao batch plan --source municipio --year 2024 --dry-run --demo-estimated-bytes 1073741824 --format json
+    uv run alfabetizacao batch run --source municipio --year 2024 --dry-run --demo --format json
+    uv run alfabetizacao release select --manifests tests/releases/fixtures/manifests.json --release-id demo-2024 --year 2024 --expected-source uf --expected-source meta_alfabetizacao_brasil --expected-source meta_alfabetizacao_uf --expected-source meta_alfabetizacao_municipio --expected-source municipio --expected-source alunos
 
 O dry-run deve expor bytes estimados. Acima de 25 GiB, pare. O aumento de cap é
 uma ação humana registrada em [user-actions.md](user-actions.md). Quando a
@@ -52,15 +55,19 @@ evidência. Não copie registros de aluno.
 Antes de promover, confirme: release candidato completo, regras bloqueantes
 verdes, manifest de cada fonte e release ativo atual conhecidos.
 
-    uv run alfabetizacao release promote --release-id <release_id> --dry-run
-    uv run alfabetizacao release promote --release-id <release_id>
-    uv run alfabetizacao release rollback --to-release-id <release_id_anterior> --dry-run
+    uv run alfabetizacao release promote --release-id <release_id> --table <projeto>.ops.active_release --dry-run
+    uv run alfabetizacao release rollback --active-release-id <release_id_atual> --previous-release-id <release_id_anterior> --table <projeto>.ops.active_release --dry-run
 
-A promoção e o rollback são transacionais. Se a promoção parar ou retornar erro,
-consulte ops.active_release: se o ponteiro não mudou, não tente corrigir tabelas
-Gold manualmente. Corrija o candidato, execute os testes e repita a promoção. Se
-mudou para o release errado, execute rollback para o release anterior conhecido
-e abra o incidente com hashes/contagens, nunca PII.
+Esses dois comandos locais apenas renderizam o SQL parametrizado e recusam
+`--execute`; não executam DML na cloud. Após revisão e autorização, a operação
+deve executar os scripts versionados em `sql/quality/promote_release.sql` ou
+`sql/quality/rollback_release.sql` no BigQuery, com os parâmetros do ambiente.
+A promoção e o rollback descritos nesses scripts são transacionais. Se a operação
+parar ou retornar erro, consulte `ops.active_release`: se o ponteiro não mudou,
+não tente corrigir tabelas Gold manualmente. Corrija o candidato, execute os
+testes e repita a promoção. Se mudou para o release errado, execute o rollback
+para o release anterior conhecido e abra o incidente com hashes/contagens,
+nunca PII.
 
 ## Demo streaming e drain
 
@@ -96,4 +103,3 @@ execução ativa. Rode "terraform plan -destroy" em cada root, revise recursos
 protegidos e só então execute "terraform destroy" com autorização. Retenção de
 Bronze não substitui destroy pós-avaliação. Não execute destroy em state, bucket
 ou projeto diferentes dos confirmados no plano.
-
