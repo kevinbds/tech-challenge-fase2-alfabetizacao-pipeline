@@ -3,7 +3,11 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from tests.sql.bigquery_script_runner import ScriptAssertionError, run_bigquery_script
+from tests.sql.bigquery_script_runner import (
+    ScriptAssertionError,
+    ScriptRunOptions,
+    run_bigquery_script,
+)
 
 PROMOTE = Path("sql/quality/promote_release.sql")
 ROLLBACK = Path("sql/quality/rollback_release.sql")
@@ -25,7 +29,7 @@ MANDATORY_RULES = (
 )
 
 
-def _release_database() -> duckdb.DuckDBPyConnection:
+def release_database() -> duckdb.DuckDBPyConnection:
     connection = duckdb.connect(":memory:")
     _ = connection.execute(
         """
@@ -42,33 +46,49 @@ def _release_database() -> duckdb.DuckDBPyConnection:
         insert into release_registry values
             ('release-a', 'active', timestamp '2024-01-01', timestamp '2024-01-01'),
             ('release-b', 'succeeded', timestamp '2024-02-01', null);
-        create table release_results(release_id varchar, rule_id varchar, severity varchar);
+        create table release_results(
+            release_id varchar,
+            rule_id varchar,
+            metric_value double,
+            severity varchar,
+            action varchar
+        );
         create table release_files(release_id varchar, file_name varchar);
         """
     )
     return connection
 
 
-def _insert_quality_results(
+def insert_quality_results(
     connection: duckdb.DuckDBPyConnection,
     *,
     omitted_rule: str | None = None,
     critical_rule: str | None = None,
 ) -> None:
     rows = [
-        ("release-b", rule, "critical" if rule == critical_rule else "pass")
+        (
+            "release-b",
+            rule,
+            0.0,
+            "critical" if rule == critical_rule else "pass",
+            "quarantine_and_block" if rule == critical_rule else "promote",
+        )
         for rule in MANDATORY_RULES
         if rule != omitted_rule
     ]
-    _ = connection.executemany("insert into release_results values (?, ?, ?)", rows)
+    _ = connection.executemany("insert into release_results values (?, ?, ?, ?, ?)", rows)
 
 
 @pytest.mark.parametrize("candidate", ["missing-release", "release-a"])
 def test_promotion_fails_closed_when_candidate_is_missing_or_not_succeeded(candidate: str) -> None:
-    with _release_database() as connection:
-        _insert_quality_results(connection)
+    with release_database() as connection:
+        insert_quality_results(connection)
         with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(connection, PROMOTE, release_id=candidate)
+            run_bigquery_script(
+                connection,
+                PROMOTE,
+                options=ScriptRunOptions(parameters={"release_id": candidate}),
+            )
         assert connection.execute("select release_id from active_release").fetchone() == (
             "release-a",
         )
@@ -76,24 +96,36 @@ def test_promotion_fails_closed_when_candidate_is_missing_or_not_succeeded(candi
 
 @pytest.mark.parametrize("omitted_rule", [None, *MANDATORY_RULES])
 def test_promotion_requires_nonempty_complete_quality_set(omitted_rule: str | None) -> None:
-    with _release_database() as connection:
+    with release_database() as connection:
         if omitted_rule is not None:
-            _insert_quality_results(connection, omitted_rule=omitted_rule)
+            insert_quality_results(connection, omitted_rule=omitted_rule)
         with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(connection, PROMOTE, release_id="release-b")
+            run_bigquery_script(
+                connection,
+                PROMOTE,
+                options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+            )
         assert connection.execute("select release_id from active_release").fetchone() == (
             "release-a",
         )
 
 
 def test_promotion_rejects_critical_and_promotes_complete_candidate() -> None:
-    with _release_database() as connection:
-        _insert_quality_results(connection, critical_rule="relationships")
+    with release_database() as connection:
+        insert_quality_results(connection, critical_rule="relationships")
         with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(connection, PROMOTE, release_id="release-b")
+            run_bigquery_script(
+                connection,
+                PROMOTE,
+                options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+            )
         _ = connection.execute("delete from release_results")
-        _insert_quality_results(connection)
-        run_bigquery_script(connection, PROMOTE, release_id="release-b")
+        insert_quality_results(connection)
+        run_bigquery_script(
+            connection,
+            PROMOTE,
+            options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+        )
         assert connection.execute(
             "select release_id, prior_release_id from active_release"
         ).fetchone() == ("release-b", "release-a")
@@ -103,27 +135,35 @@ def test_promotion_rejects_critical_and_promotes_complete_candidate() -> None:
 
 
 def test_promotion_rejects_candidate_with_duplicate_registry_rows() -> None:
-    with _release_database() as connection:
+    with release_database() as connection:
         _ = connection.execute(
             "insert into release_registry values ('release-b', 'failed', date '2024-02-02', null)"
         )
-        _insert_quality_results(connection)
+        insert_quality_results(connection)
         with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(connection, PROMOTE, release_id="release-b")
+            run_bigquery_script(
+                connection,
+                PROMOTE,
+                options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+            )
         assert connection.execute(
             "select release_id, prior_release_id from active_release"
         ).fetchone() == ("release-a", None)
 
 
 def test_promotion_rejects_active_release_as_candidate_before_any_dml() -> None:
-    with _release_database() as connection:
+    with release_database() as connection:
         _ = connection.execute(
             "update release_registry set status = 'succeeded' where release_id = 'release-a'"
         )
-        _insert_quality_results(connection)
+        insert_quality_results(connection)
         _ = connection.execute("update release_results set release_id = 'release-a'")
         with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(connection, PROMOTE, release_id="release-a")
+            run_bigquery_script(
+                connection,
+                PROMOTE,
+                options=ScriptRunOptions(parameters={"release_id": "release-a"}),
+            )
         assert connection.execute(
             "select release_id, prior_release_id from active_release"
         ).fetchone() == ("release-a", None)
@@ -133,33 +173,45 @@ def test_promotion_rejects_active_release_as_candidate_before_any_dml() -> None:
 
 
 def test_promotion_rejects_active_pointer_with_self_referencing_prior() -> None:
-    with _release_database() as connection:
+    with release_database() as connection:
         _ = connection.execute("update active_release set prior_release_id = 'release-a'")
-        _insert_quality_results(connection)
+        insert_quality_results(connection)
         with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(connection, PROMOTE, release_id="release-b")
+            run_bigquery_script(
+                connection,
+                PROMOTE,
+                options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+            )
         assert connection.execute(
             "select release_id, prior_release_id from active_release"
         ).fetchone() == ("release-a", "release-a")
 
 
 def test_promotion_rejects_active_pointer_with_inconsistent_registry_state() -> None:
-    with _release_database() as connection:
+    with release_database() as connection:
         _ = connection.execute(
             "update release_registry set status = 'succeeded' where release_id = 'release-a'"
         )
-        _insert_quality_results(connection)
+        insert_quality_results(connection)
         with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(connection, PROMOTE, release_id="release-b")
+            run_bigquery_script(
+                connection,
+                PROMOTE,
+                options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+            )
         assert connection.execute(
             "select release_id, prior_release_id from active_release"
         ).fetchone() == ("release-a", None)
 
 
 def test_rollback_executes_delivered_script_and_restores_prior_release() -> None:
-    with _release_database() as connection:
-        _insert_quality_results(connection)
-        run_bigquery_script(connection, PROMOTE, release_id="release-b")
+    with release_database() as connection:
+        insert_quality_results(connection)
+        run_bigquery_script(
+            connection,
+            PROMOTE,
+            options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+        )
         run_bigquery_script(connection, ROLLBACK)
         assert connection.execute(
             "select release_id, prior_release_id from active_release"
@@ -167,7 +219,7 @@ def test_rollback_executes_delivered_script_and_restores_prior_release() -> None
 
 
 def test_cleanup_with_null_prior_preserves_active_and_deletes_only_eligible() -> None:
-    with _release_database() as connection:
+    with release_database() as connection:
         _ = connection.execute(
             """
             insert into release_registry values
@@ -194,7 +246,7 @@ def test_cleanup_with_null_prior_preserves_active_and_deletes_only_eligible() ->
 
 
 def test_cleanup_preserves_nonnull_prior_even_when_old() -> None:
-    with _release_database() as connection:
+    with release_database() as connection:
         _ = connection.execute(
             """
             update active_release set prior_release_id = 'release-b';

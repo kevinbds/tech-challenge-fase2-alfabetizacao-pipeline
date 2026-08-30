@@ -12,6 +12,7 @@ declare quality_rows int64;
 declare required_rules_seen int64;
 declare critical_failures int64;
 
+begin transaction;
 set active_rows
 = (
     select count(*) from `{{ project_id }}.ops.active_release`
@@ -107,19 +108,24 @@ set critical_failures = (
 );
 assert critical_failures = 0 as 'candidate release has critical quality failures';
 
-begin transaction;
 update `{{ project_id }}.ops.active_release`
 set
     prior_release_id = current_release,
     release_id = candidate_release,
     promoted_at = current_timestamp()
-where singleton_key = true;
+where
+    singleton_key = true
+    and release_id = current_release
+    and prior_release_id is not distinct from prior_release;
+assert @@row_count = 1 as 'active release pointer changed during promotion';
 
 update `{{ project_id }}.ops.release_registry`
 set status = 'active', promoted_at = current_timestamp()
-where release_id = candidate_release;
+where release_id = candidate_release and status = 'succeeded';
+assert @@row_count = 1 as 'candidate registry row changed during promotion';
 
 update `{{ project_id }}.ops.release_registry`
 set status = 'inactive'
-where release_id = current_release;
+where release_id = current_release and status = 'active';
+assert @@row_count = 1 as 'active registry row changed during promotion';
 commit transaction;
