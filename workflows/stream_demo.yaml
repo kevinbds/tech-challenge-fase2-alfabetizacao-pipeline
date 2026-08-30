@@ -85,6 +85,7 @@ main:
                   location: ${region}
                   jobId: ${dataflow_job_id}
                   body: {requestedState: JOB_STATE_DRAINED}
+                  connector_params: {timeout: 30}
             - wait_drained:
                 call: wait_dataflow_state
                 args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', target_state: JOB_STATE_DRAINED, max_attempts: 120}
@@ -157,12 +158,16 @@ cleanup_dataflow:
         next: init_discovery
     - init_discovery:
         assign:
-          - discovery_attempt: 0
+          - discovery_scan: 1
+          - discovery_deadline: ${sys.now() + 120}
     - init_page_scan:
         assign:
           - page_token: ""
           - next_page_token: ""
           - page_count: 1
+          - visited_page_tokens: [""]
+          - matched_job_id: null
+          - duplicate_match: false
     - list_active_jobs:
         call: googleapis.dataflow.v1b3.projects.locations.jobs.list
         args:
@@ -171,7 +176,12 @@ cleanup_dataflow:
           filter: ACTIVE
           pageSize: 100
           pageToken: ${page_token}
+          connector_params: {timeout: 30}
         result: active_jobs
+    - validate_listing:
+        switch:
+          - condition: '${get_type(default(map.get(active_jobs, "jobs"), [])) != "list"}'
+            next: no_matching_job
     - init_search:
         assign:
           - candidate_index: 0
@@ -183,11 +193,33 @@ cleanup_dataflow:
     - inspect_candidate:
         assign:
           - candidate: ${active_jobs.jobs[candidate_index]}
+        next: validate_candidate
+    - validate_candidate:
+        switch:
+          - condition: '${get_type(candidate) != "map"}'
+            next: no_matching_job
+        next: inspect_candidate_labels
+    - inspect_candidate_labels:
+        assign:
           - candidate_labels: ${default(map.get(candidate, "labels"), {})}
     - candidate_matches:
         switch:
-          - condition: ${candidate.name == job_name and map.get(candidate_labels, "run_id") == correlation_id}
-            next: remember_discovered
+          - condition: '${get_type(candidate_labels) == "map" and candidate.name == job_name and map.get(candidate_labels, "run_id") == correlation_id and get_type(map.get(candidate, "id")) == "string"}'
+            next: classify_match
+        next: advance_candidate
+    - classify_match:
+        switch:
+          - condition: ${matched_job_id != null}
+            next: record_duplicate
+        next: record_match
+    - record_match:
+        assign:
+          - matched_job_id: ${candidate.id}
+        next: advance_candidate
+    - record_duplicate:
+        assign:
+          - duplicate_match: true
+        next: advance_candidate
     - advance_candidate:
         assign:
           - candidate_index: ${candidate_index + 1}
@@ -195,12 +227,18 @@ cleanup_dataflow:
     - capture_next_page:
         assign:
           - next_page_token: ${default(map.get(active_jobs, "nextPageToken"), "")}
+    - validate_next_page:
+        switch:
+          - condition: '${get_type(next_page_token) != "string"}'
+            next: no_matching_job
     - guard_next_page:
         switch:
+          - condition: ${sys.now() >= discovery_deadline}
+            next: no_matching_job
           - condition: ${next_page_token == ""}
-            next: retry_discovery
-          - condition: ${next_page_token == page_token}
-            next: retry_discovery
+            next: choose_unique_match
+          - condition: ${next_page_token in visited_page_tokens}
+            next: no_matching_job
           - condition: ${page_count >= 100}
             next: retry_discovery
         next: advance_page
@@ -208,22 +246,31 @@ cleanup_dataflow:
         assign:
           - page_token: ${next_page_token}
           - page_count: ${page_count + 1}
+          - visited_page_tokens: ${list.concat(visited_page_tokens, next_page_token)}
         next: list_active_jobs
+    - choose_unique_match:
+        switch:
+          - condition: ${duplicate_match}
+            next: no_matching_job
+          - condition: ${matched_job_id != null}
+            next: remember_discovered
+        next: retry_discovery
     - remember_discovered:
         assign:
-          - job_id: ${candidate.id}
+          - job_id: ${matched_job_id}
         next: inspect_known
     - retry_discovery:
         switch:
-          - condition: ${discovery_attempt >= 12}
+          - condition: ${discovery_scan >= 12 or sys.now() >= discovery_deadline}
             next: no_matching_job
         next: pause_discovery
     - pause_discovery:
         call: sys.sleep
         args: {seconds: 10}
+        next: advance_discovery
     - advance_discovery:
         assign:
-          - discovery_attempt: ${discovery_attempt + 1}
+          - discovery_scan: ${discovery_scan + 1}
         next: init_page_scan
     - no_matching_job:
         return: {success: true, final_state: JOB_NOT_FOUND}
@@ -237,7 +284,12 @@ cleanup_dataflow:
             return: {success: true, final_state: '${job.currentState}'}
     - cancel:
         call: googleapis.dataflow.v1b3.projects.locations.jobs.update
-        args: {projectId: '${project_id}', location: '${region}', jobId: '${job_id}', body: {requestedState: JOB_STATE_CANCELLED}}
+        args:
+          projectId: ${project_id}
+          location: ${region}
+          jobId: ${job_id}
+          body: {requestedState: JOB_STATE_CANCELLED}
+          connector_params: {timeout: 30}
     - wait_cancelled:
         call: wait_dataflow_state
         args: {project_id: '${project_id}', region: '${region}', job_id: '${job_id}', target_state: JOB_STATE_CANCELLED, max_attempts: 120}
