@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from enum import StrEnum, unique
-from typing import ClassVar, Protocol, override
+from typing import ClassVar, Final, Protocol, override
+
+DISCOVERY_PAGE_SIZE: Final = 100
+MAX_DISCOVERY_PAGES: Final = 100
 
 
 @unique
@@ -60,6 +63,33 @@ class WorkflowResult:
 
     success: bool
     final_state: WorkflowJobState
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryResult:
+    """Resultado local de uma varredura paginada bounded."""
+
+    found: bool
+    pages_scanned: int
+    repeated_token_detected: bool
+
+
+def simulate_paginated_discovery(
+    active_jobs_before_target: int,
+    *,
+    target_matches: bool,
+    repeated_page_token: bool,
+) -> DiscoveryResult:
+    """Simule paginação, correlação exata e proteção contra token repetido."""
+    target_page = active_jobs_before_target // DISCOVERY_PAGE_SIZE + 1
+    if repeated_page_token and target_page > 1:
+        return DiscoveryResult(found=False, pages_scanned=2, repeated_token_detected=True)
+    pages_scanned = min(target_page, MAX_DISCOVERY_PAGES)
+    return DiscoveryResult(
+        found=target_matches and target_page <= MAX_DISCOVERY_PAGES,
+        pages_scanned=pages_scanned,
+        repeated_token_detected=False,
+    )
 
 
 class WorkflowPort(Protocol):

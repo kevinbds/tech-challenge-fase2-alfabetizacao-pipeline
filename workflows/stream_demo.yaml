@@ -158,6 +158,11 @@ cleanup_dataflow:
     - init_discovery:
         assign:
           - discovery_attempt: 0
+    - init_page_scan:
+        assign:
+          - page_token: ""
+          - next_page_token: ""
+          - page_count: 1
     - list_active_jobs:
         call: googleapis.dataflow.v1b3.projects.locations.jobs.list
         args:
@@ -165,6 +170,7 @@ cleanup_dataflow:
           location: ${region}
           filter: ACTIVE
           pageSize: 100
+          pageToken: ${page_token}
         result: active_jobs
     - init_search:
         assign:
@@ -173,7 +179,7 @@ cleanup_dataflow:
     - search_done:
         switch:
           - condition: ${candidate_index >= candidate_count}
-            next: retry_discovery
+            next: capture_next_page
     - inspect_candidate:
         assign:
           - candidate: ${active_jobs.jobs[candidate_index]}
@@ -186,6 +192,23 @@ cleanup_dataflow:
         assign:
           - candidate_index: ${candidate_index + 1}
         next: search_done
+    - capture_next_page:
+        assign:
+          - next_page_token: ${default(map.get(active_jobs, "nextPageToken"), "")}
+    - guard_next_page:
+        switch:
+          - condition: ${next_page_token == ""}
+            next: retry_discovery
+          - condition: ${next_page_token == page_token}
+            next: retry_discovery
+          - condition: ${page_count >= 100}
+            next: retry_discovery
+        next: advance_page
+    - advance_page:
+        assign:
+          - page_token: ${next_page_token}
+          - page_count: ${page_count + 1}
+        next: list_active_jobs
     - remember_discovered:
         assign:
           - job_id: ${candidate.id}
@@ -201,7 +224,7 @@ cleanup_dataflow:
     - advance_discovery:
         assign:
           - discovery_attempt: ${discovery_attempt + 1}
-        next: list_active_jobs
+        next: init_page_scan
     - no_matching_job:
         return: {success: true, final_state: JOB_NOT_FOUND}
     - inspect_known:

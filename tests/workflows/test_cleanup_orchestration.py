@@ -51,6 +51,34 @@ assert port.discovery_requested
 assert not port.job_id_known
 """
 
+PAGINATION_PROGRAM = """
+from alfabetizacao_pipeline.streaming.workflow_orchestrator import simulate_paginated_discovery
+
+second_page = simulate_paginated_discovery(
+    active_jobs_before_target=101,
+    target_matches=True,
+    repeated_page_token=False,
+)
+assert second_page.found
+assert second_page.pages_scanned == 2
+
+mismatch = simulate_paginated_discovery(
+    active_jobs_before_target=101,
+    target_matches=False,
+    repeated_page_token=False,
+)
+assert not mismatch.found
+
+repeated = simulate_paginated_discovery(
+    active_jobs_before_target=101,
+    target_matches=True,
+    repeated_page_token=True,
+)
+assert not repeated.found
+assert repeated.repeated_token_detected
+assert repeated.pages_scanned == 2
+"""
+
 
 @pytest.mark.parametrize(
     "failure",
@@ -103,4 +131,18 @@ def test_discovery_failure_does_not_mask_ambiguous_launch_error() -> None:
     )
 
     # Then the original launch error remains observable
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_paginated_discovery_finds_page_two_and_stops_repeated_token() -> None:
+    # Given more than one hundred active jobs and exact target on page two
+    # When discovery also receives a repeated-token adversarial response
+    completed = subprocess.run(
+        [sys.executable, "-c", PAGINATION_PROGRAM],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    # Then exact target is found across pages and repeated token stops safely
     assert completed.returncode == 0, completed.stderr

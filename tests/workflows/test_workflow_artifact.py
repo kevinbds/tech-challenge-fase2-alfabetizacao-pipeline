@@ -35,6 +35,15 @@ assert "googleapis.dataflow.v1b3.projects.locations.jobs.list" in calls
 listing = next(step["list_active_jobs"] for step in cleanup_steps if "list_active_jobs" in step)
 assert listing["args"]["filter"] == "ACTIVE"
 assert listing["args"]["pageSize"] == 100
+assert listing["args"]["pageToken"] == "${page_token}"
+page_init = next(step["init_page_scan"] for step in cleanup_steps if "init_page_scan" in step)
+assert {item["page_token"] for item in page_init["assign"] if "page_token" in item} == {""}
+next_page = next(step["capture_next_page"] for step in cleanup_steps if "capture_next_page" in step)
+assert "nextPageToken" in next_page["assign"][0]["next_page_token"]
+page_guard = next(step["guard_next_page"] for step in cleanup_steps if "guard_next_page" in step)
+page_conditions = {branch["condition"] for branch in page_guard["switch"]}
+assert "${next_page_token == page_token}" in page_conditions
+assert "${page_count >= 100}" in page_conditions
 retry = next(step["retry_discovery"] for step in cleanup_steps if "retry_discovery" in step)
 assert retry["switch"][0]["condition"] == "${discovery_attempt >= 12}"
 pause = next(step["pause_discovery"] for step in cleanup_steps if "pause_discovery" in step)
