@@ -97,6 +97,22 @@ def test_promotion_rejects_critical_and_promotes_complete_candidate() -> None:
         assert connection.execute(
             "select release_id, prior_release_id from active_release"
         ).fetchone() == ("release-b", "release-a")
+        assert connection.execute(
+            "select release_id, status from release_registry order by release_id"
+        ).fetchall() == [("release-a", "inactive"), ("release-b", "active")]
+
+
+def test_promotion_rejects_candidate_with_duplicate_registry_rows() -> None:
+    with _release_database() as connection:
+        _ = connection.execute(
+            "insert into release_registry values ('release-b', 'failed', date '2024-02-02', null)"
+        )
+        _insert_quality_results(connection)
+        with pytest.raises(ScriptAssertionError):
+            run_bigquery_script(connection, PROMOTE, release_id="release-b")
+        assert connection.execute(
+            "select release_id, prior_release_id from active_release"
+        ).fetchone() == ("release-a", None)
 
 
 def test_promotion_rejects_active_release_as_candidate_before_any_dml() -> None:

@@ -7,6 +7,7 @@ declare active_registry_state_rows int64;
 declare prior_registry_rows int64;
 declare prior_registry_state_rows int64;
 declare candidate_rows int64;
+declare candidate_state_rows int64;
 declare quality_rows int64;
 declare required_rules_seen int64;
 declare critical_failures int64;
@@ -59,9 +60,16 @@ assert (
 set candidate_rows = (
     select count(*)
     from `{{ project_id }}.ops.release_registry`
+    where release_id = candidate_release
+);
+set candidate_state_rows = (
+    select count(*)
+    from `{{ project_id }}.ops.release_registry`
     where release_id = candidate_release and status = 'succeeded'
 );
-assert candidate_rows = 1 as 'candidate release must exist exactly once in succeeded state';
+assert (
+    candidate_rows = 1 and candidate_state_rows = 1
+) as 'candidate release must exist exactly once in succeeded state';
 
 set quality_rows = (
     select count(*)

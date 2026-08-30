@@ -55,7 +55,7 @@ def run_bigquery_script(
     statements = [
         part.strip() for part in path.read_text(encoding="utf-8").split(";") if part.strip()
     ]
-    for statement in statements:
+    for statement_index, statement in enumerate(statements):
         lowered = statement.lower()
         if lowered.startswith("declare "):
             match = re.fullmatch(
@@ -82,9 +82,12 @@ def run_bigquery_script(
             assert query_parts is not None
             expressions = [expression.strip() for expression in query_parts.group(1).split(",")]
             assert len(expressions) == len(names)
+            assert all(re.fullmatch(r"[a-z_]+", expression) for expression in expressions)
+            set_table = f"_script_{path.stem}_{statement_index}"
+            _ = connection.execute(f"create or replace temp table {set_table} as {query}")
             variables.update(
                 {
-                    name: f"(select {expression} from {query_parts.group(2)})"
+                    name: f"(select {expression} from {set_table})"
                     for name, expression in zip(names, expressions, strict=True)
                 }
             )
@@ -96,7 +99,12 @@ def run_bigquery_script(
                 flags=re.IGNORECASE | re.DOTALL,
             )
             assert match is not None
-            variables[match.group(1)] = f"({_translate(match.group(2), variables)})"
+            set_table = f"_script_{path.stem}_{statement_index}"
+            query = _translate(match.group(2), variables)
+            _ = connection.execute(
+                f"create or replace temp table {set_table} as select ({query}) as value"
+            )
+            variables[match.group(1)] = f"(select value from {set_table})"
             continue
         if lowered.startswith("assert "):
             match = re.fullmatch(
