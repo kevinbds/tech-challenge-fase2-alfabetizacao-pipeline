@@ -120,5 +120,5 @@ show_missing = true
 
 [tool.sqlfluff.core]
 dialect = "bigquery"
-templater = "dbt"
+templater = "jinja"
 max_line_length = 100
