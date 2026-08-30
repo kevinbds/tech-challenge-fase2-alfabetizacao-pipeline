@@ -1,0 +1,65 @@
+{
+  "serviceAccount": "${_SERVICE_ACCOUNT}",
+  "timeout": "1800s",
+  "options": {
+    "logging": "CLOUD_LOGGING_ONLY",
+    "machineType": "E2_HIGHCPU_8",
+    "dynamicSubstitutions": true,
+    "requestedVerifyOption": "VERIFIED"
+  },
+  "substitutions": {
+    "_REGION": "southamerica-east1",
+    "_REPOSITORY": "alfabetizacao",
+    "_SERVICE_ACCOUNT": "",
+    "_ARTIFACT_BUCKET": ""
+  },
+  "steps": [
+    {
+      "id": "build-batch",
+      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "args": ["build", "--pull", "--file", "containers/batch.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA", "."]
+    },
+    {
+      "id": "push-batch",
+      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA"]
+    },
+    {
+      "id": "build-dbt",
+      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "args": ["build", "--pull", "--file", "containers/dbt.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt:$COMMIT_SHA", "."]
+    },
+    {
+      "id": "push-dbt",
+      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt:$COMMIT_SHA"]
+    },
+    {
+      "id": "build-producer",
+      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "args": ["build", "--pull", "--file", "containers/producer.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer:$COMMIT_SHA", "."]
+    },
+    {
+      "id": "push-producer",
+      "name": "gcr.io/cloud-builders/docker:28.2.2",
+      "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer:$COMMIT_SHA"]
+    },
+    {
+      "id": "capture-digests",
+      "name": "gcr.io/google.com/cloudsdktool/google-cloud-cli:553.0.0-slim",
+      "entrypoint": "bash",
+      "args": [
+        "-euo",
+        "pipefail",
+        "-c",
+        "batch=$(gcloud artifacts docker images describe ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA --format='value(image_summary.digest)'); dbt=$(gcloud artifacts docker images describe ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt:$COMMIT_SHA --format='value(image_summary.digest)'); producer=$(gcloud artifacts docker images describe ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer:$COMMIT_SHA --format='value(image_summary.digest)'); [[ $batch =~ ^sha256:[0-9a-f]{64}$ && $dbt =~ ^sha256:[0-9a-f]{64}$ && $producer =~ ^sha256:[0-9a-f]{64}$ ]]; printf '{\"build_id\":\"%s\",\"git_sha\":\"%s\",\"images\":{\"batch\":\"%s@%s\",\"dbt\":\"%s@%s\",\"producer\":\"%s@%s\"},\"provenance\":\"verified\",\"sbom\":\"artifact-registry-when-available\"}\n' \"$BUILD_ID\" \"$COMMIT_SHA\" \"${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch\" \"$batch\" \"${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt\" \"$dbt\" \"${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer\" \"$producer\" > /workspace/image-digests.json"
+      ]
+    }
+  ],
+  "artifacts": {
+    "objects": {
+      "location": "gs://${_ARTIFACT_BUCKET}/builds/$BUILD_ID",
+      "paths": ["/workspace/image-digests.json"]
+    }
+  }
+}

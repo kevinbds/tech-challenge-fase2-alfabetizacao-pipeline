@@ -1,0 +1,20 @@
+{
+  "name": "deploy-gcp",
+  "on": ["workflow_dispatch"],
+  "permissions": {"contents": "read"},
+  "jobs": {
+    "deploy": {
+      "if": "github.event_name == 'workflow_dispatch' && github.repository_owner == vars.EXPECTED_REPOSITORY_OWNER",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "environment": "production",
+      "permissions": {"contents": "read", "id-token": "write"},
+      "steps": [
+        {"uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"},
+        {"uses": "google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed", "with": {"workload_identity_provider": "${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}", "service_account": "${{ vars.GCP_CI_SERVICE_ACCOUNT }}"}},
+        {"uses": "google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f", "with": {"version": "553.0.0"}},
+        {"name": "Build immutable images", "run": "gcloud builds submit --project=${{ vars.GCP_PROJECT_ID }} --region=${{ vars.GCP_REGION }} --config=cloudbuild/build-images.yml --service-account=${{ vars.GCP_CLOUD_BUILD_SERVICE_ACCOUNT }} --substitutions=_REGION=${{ vars.GCP_REGION }},_REPOSITORY=${{ vars.GCP_ARTIFACT_REPOSITORY }},_SERVICE_ACCOUNT=${{ vars.GCP_CLOUD_BUILD_SERVICE_ACCOUNT }},_ARTIFACT_BUCKET=${{ vars.GCP_ARTIFACT_BUCKET }},COMMIT_SHA=${{ github.sha }} ."}
+      ]
+    }
+  }
+}
