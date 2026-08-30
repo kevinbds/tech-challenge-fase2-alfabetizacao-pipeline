@@ -15,6 +15,7 @@ locals {
     batch = toset(["roles/bigquery.jobUser"])
     dbt   = toset(["roles/bigquery.jobUser"])
     workflow = toset([
+      "roles/bigquery.jobUser",
       "roles/dataflow.developer",
       "roles/monitoring.viewer",
       "roles/run.jobsExecutorWithOverrides",

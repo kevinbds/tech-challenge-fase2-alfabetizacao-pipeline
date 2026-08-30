@@ -23,7 +23,10 @@ variables {
     municipio                    = "gs://fiap-fase2-test-artifacts/reference/municipio/schema.parquet"
     alunos                       = "gs://fiap-fase2-test-artifacts/reference/alunos/schema.parquet"
   }
-  budget_currency = "BRL"
+  budget_currency              = "BRL"
+  runtime_entrypoints_verified = true
+  batch_command                = ["mock-batch-entrypoint"]
+  producer_command             = ["mock-producer-entrypoint"]
 }
 
 run "platform_contract" {
@@ -44,6 +47,26 @@ run "platform_contract" {
   assert {
     condition     = output.external_table_contracts["alunos"].autodetect == false && startswith(output.external_table_contracts["alunos"].reference_file_schema_uri, "gs://") && output.external_table_contracts["alunos"].dataset_id == "bronze_restricted"
     error_message = "External Parquet deve usar arquivo de schema de referência e autodetect desligado."
+  }
+  assert {
+    condition     = alltrue([for contract in values(output.external_table_contracts) : length(regexall("\\*", one(contract.source_uris))) == 1 && endswith(one(contract.source_uris), "*.parquet")])
+    error_message = "Cada external table deve usar exatamente um wildcard GCS suportado pelo BigQuery."
+  }
+  assert {
+    condition = (
+      strcontains(output.stream_demo_workflow_contract, "correlation_id") &&
+      strcontains(output.stream_demo_workflow_contract, "CORRELATION_ID") &&
+      strcontains(output.stream_demo_workflow_contract, "raw_start_offset") &&
+      strcontains(output.stream_demo_workflow_contract, "COUNT(DISTINCT event_id)") &&
+      strcontains(output.stream_demo_workflow_contract, "int(stream_result.body.rows[0].f[0].v) == 8") &&
+      strcontains(output.stream_demo_workflow_contract, "except:") &&
+      strcontains(output.stream_demo_workflow_contract, "JOB_STATE_CANCELLED") &&
+      strcontains(output.stream_demo_workflow_contract, "connector_params") &&
+      strcontains(output.stream_demo_workflow_contract, "additionalUserLabels") &&
+      strcontains(output.stream_demo_workflow_contract, "RUN_ID") &&
+      !strcontains(output.stream_demo_workflow_contract, "seconds: 600")
+    )
+    error_message = "O demo deve correlacionar arquivo e oito eventos Silver da execução atual, sem espera fixa."
   }
   assert {
     condition     = output.silver_alunos_partition_expiration_ms == 31536000000
@@ -74,8 +97,19 @@ run "platform_contract" {
     error_message = "Batch não pode deletar Bronze nem ler datasets restritos de alunos."
   }
   assert {
+    condition = (
+      contains(local.project_roles.workflow, "roles/bigquery.jobUser") &&
+      local.dataset_bindings["workflow:silver:roles/bigquery.dataViewer"].role == "roles/bigquery.dataViewer"
+    )
+    error_message = "A identidade do Workflow precisa executar consulta e ler apenas o Silver para verificar a correlação."
+  }
+  assert {
     condition     = output.runtime_contract.maximum_bytes_billed == 26843545600 && alltrue([for job in values(output.runtime_contract.jobs) : job.task_count == 1 && can(regex("@sha256:[0-9a-f]{64}$", job.image))])
     error_message = "Jobs devem ser efêmeros, unitários, por digest e carregar o cap de 25 GiB."
+  }
+  assert {
+    condition     = output.runtime_entrypoint_contract.status == "verified-by-integration" && output.runtime_entrypoint_contract.requires_integration_gate
+    error_message = "Entrypoints de Batch e Producer só podem ser liberados após o gate da integração."
   }
 }
 
@@ -110,4 +144,10 @@ run "rejects_malformed_project_and_billing" {
     billing_account_id = "billing-invalido"
   }
   expect_failures = [var.project_id, var.billing_account_id]
+}
+
+run "rejects_unverified_runtime_entrypoints" {
+  command = plan
+  variables { runtime_entrypoints_verified = false }
+  expect_failures = [output.runtime_entrypoint_contract]
 }

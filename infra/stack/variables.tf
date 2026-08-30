@@ -130,6 +130,36 @@ variable "scheduler_enabled" {
   description = "Opt-in explícito para despausar o lote mensal."
 }
 
+variable "runtime_entrypoints_verified" {
+  type        = bool
+  default     = false
+  description = "Gate da integração: só libera plano/aplicação depois de validar os entrypoints Batch e Producer no SHA integrado."
+}
+
+variable "batch_command" {
+  type        = list(string)
+  default     = []
+  description = "Command do container Batch, preenchido somente pelo gate de integração."
+}
+
+variable "batch_args" {
+  type        = list(string)
+  default     = []
+  description = "Argumentos do Batch validados no SHA integrado."
+}
+
+variable "producer_command" {
+  type        = list(string)
+  default     = []
+  description = "Command do Producer, preenchido somente pelo gate de integração."
+}
+
+variable "producer_args" {
+  type        = list(string)
+  default     = []
+  description = "Argumentos do Producer validados no SHA integrado."
+}
+
 variable "maximum_bytes_billed" {
   type        = number
   default     = 26843545600

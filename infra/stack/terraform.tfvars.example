@@ -21,5 +21,10 @@ reference_schema_uris = {
 }
 
 scheduler_enabled = false
+runtime_entrypoints_verified = false # altere somente após o gate de integração dos containers
+batch_command               = []    # fornecido pelo SHA integrado
+batch_args                  = []
+producer_command            = []
+producer_args               = []
 budget_currency   = "BRL"
 # budget_amount omitido usa 50 apenas porque BRL foi escolhido explicitamente.

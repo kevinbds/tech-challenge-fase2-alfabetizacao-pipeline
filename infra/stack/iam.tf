@@ -27,6 +27,7 @@ locals {
     "dataflow:silver:roles/bigquery.dataEditor"      = { account = "dataflow", dataset = "silver", role = "roles/bigquery.dataEditor" }
     "dataflow:ops:roles/bigquery.dataEditor"         = { account = "dataflow", dataset = "ops", role = "roles/bigquery.dataEditor" }
     "dataflow:quarantine:roles/bigquery.dataEditor"  = { account = "dataflow", dataset = "quarantine", role = "roles/bigquery.dataEditor" }
+    "workflow:silver:roles/bigquery.dataViewer"      = { account = "workflow", dataset = "silver", role = "roles/bigquery.dataViewer" }
   }
 }
 

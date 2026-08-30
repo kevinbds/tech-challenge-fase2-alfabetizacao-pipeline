@@ -42,7 +42,7 @@ resource "google_bigquery_table" "external" {
   external_data_configuration {
     autodetect                = false
     source_format             = "PARQUET"
-    source_uris               = ["gs://${var.bronze_bucket}/bronze/${each.key}/**/*.parquet"]
+    source_uris               = ["gs://${var.bronze_bucket}/bronze/${each.key}/*.parquet"]
     reference_file_schema_uri = var.reference_schema_uris[each.key]
   }
 }

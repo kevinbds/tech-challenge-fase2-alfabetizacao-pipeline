@@ -32,6 +32,11 @@ output "streaming_archive_contract" {
   value = module.streaming.archive_contract
 }
 
+output "stream_demo_workflow_contract" {
+  description = "Template do demo, usado para validar correlação e cleanup no plano mockado."
+  value       = module.runtime.stream_demo_source
+}
+
 output "runtime_contract" {
   value = {
     scheduler            = module.runtime.scheduler_contract
@@ -41,6 +46,24 @@ output "runtime_contract" {
     dataflow_max_workers = 2
     dataflow_experiments = ["enable_portable_runner"]
     permanent_job_count  = local.permanent_dataflow_job_count
+  }
+}
+
+output "runtime_entrypoint_contract" {
+  description = "Gate explícito para entrypoints que só existem após integrar Batch e Streaming."
+  value = {
+    status                    = var.runtime_entrypoints_verified ? "verified-by-integration" : "needs-integration"
+    requires_integration_gate = true
+    jobs                      = module.runtime.job_contracts
+  }
+
+  precondition {
+    condition = (
+      var.runtime_entrypoints_verified &&
+      length(var.batch_command) > 0 &&
+      length(var.producer_command) > 0
+    )
+    error_message = "Entrypoints runtime ainda precisam ser fornecidos e validados no SHA integrado; mantenha o gate falso até a integração."
   }
 }
 

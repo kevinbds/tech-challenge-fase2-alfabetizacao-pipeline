@@ -12,3 +12,9 @@ variable "archive_bucket" { type = string }
 variable "backlog_subscription_ids" { type = list(string) }
 variable "dataflow_template_path" { type = string }
 variable "labels" { type = map(string) }
+variable "entrypoints" {
+  type = map(object({
+    command = list(string)
+    args    = list(string)
+  }))
+}

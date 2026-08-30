@@ -3,8 +3,8 @@ locals {
     batch = {
       image           = var.images["batch"]
       service_account = var.service_account_emails["batch"]
-      command         = ["python", "-m", "alfabetizacao_pipeline"]
-      args            = ["batch", "run", "--all-sources"]
+      command         = var.entrypoints["batch"].command
+      args            = var.entrypoints["batch"].args
       timeout         = "3600s"
       retries         = 1
       cpu             = "1"
@@ -23,14 +23,28 @@ locals {
     producer = {
       image           = var.images["producer"]
       service_account = var.service_account_emails["producer"]
-      command         = ["python", "-m", "alfabetizacao_pipeline"]
-      args            = ["stream", "produce-fixture"]
+      command         = var.entrypoints["producer"].command
+      args            = var.entrypoints["producer"].args
       timeout         = "900s"
       retries         = 0
       cpu             = "1"
       memory          = "512Mi"
     }
   }
+
+  stream_demo_source = templatefile("${path.module}/templates/stream-demo.yaml", {
+    project_id             = var.project_id
+    region                 = var.region
+    producer_job           = "${var.name_prefix}-producer"
+    dbt_job                = "${var.name_prefix}-dbt"
+    template_gcs_path      = var.dataflow_template_path
+    input_subscription     = var.dataflow_subscription_id
+    temp_location          = "gs://${var.dataflow_bucket}/temp/"
+    staging_location       = "gs://${var.dataflow_bucket}/staging/"
+    dataflow_service_email = var.service_account_emails["dataflow"]
+    archive_bucket         = var.archive_bucket
+    backlog_subscriptions  = jsonencode([for id in var.backlog_subscription_ids : basename(id)])
+  })
 }
 
 resource "google_cloud_run_v2_job" "job" {
@@ -128,19 +142,9 @@ resource "google_workflows_workflow" "stream_demo" {
   labels              = var.labels
   deletion_protection = true
 
-  source_contents = templatefile("${path.module}/templates/stream-demo.yaml", {
-    project_id             = var.project_id
-    region                 = var.region
-    producer_job           = google_cloud_run_v2_job.job["producer"].name
-    dbt_job                = google_cloud_run_v2_job.job["dbt"].name
-    template_gcs_path      = var.dataflow_template_path
-    input_subscription     = var.dataflow_subscription_id
-    temp_location          = "gs://${var.dataflow_bucket}/temp/"
-    staging_location       = "gs://${var.dataflow_bucket}/staging/"
-    dataflow_service_email = var.service_account_emails["dataflow"]
-    archive_bucket         = var.archive_bucket
-    backlog_subscriptions  = jsonencode([for id in var.backlog_subscription_ids : basename(id)])
-  })
+  source_contents = local.stream_demo_source
+
+  depends_on = [google_cloud_run_v2_job.job]
 }
 
 resource "google_cloud_scheduler_job" "monthly_batch" {
