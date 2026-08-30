@@ -1,8 +1,7 @@
-from collections.abc import Iterable, ItemsView
+from collections.abc import ItemsView, Iterable
 from datetime import datetime
-from typing import Literal
 
-Scalar = str | int | float | bool | datetime | None
+type Scalar = str | int | float | bool | datetime | None
 
 class ScalarQueryParameter:
     name: str
