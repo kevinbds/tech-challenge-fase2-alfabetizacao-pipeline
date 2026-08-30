@@ -122,5 +122,9 @@ show_missing = true
 
 [tool.sqlfluff.core]
 dialect = "bigquery"
-templater = "dbt"
+templater = "jinja"
 max_line_length = 100
+
+[tool.sqlfluff.templater.jinja]
+load_macros_from_path = "dbt/lint_macros,dbt/macros"
+apply_dbt_builtins = true
