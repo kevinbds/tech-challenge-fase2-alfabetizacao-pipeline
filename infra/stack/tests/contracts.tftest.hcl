@@ -208,7 +208,7 @@ run "platform_contract" {
       google_project_iam_custom_role.workflow_operation_reader.role_id == "alfabetizacaoWorkflowOperationReader" &&
       google_project_iam_member.workflow_operation_reader.project == var.project_id
     )
-    error_message = "O Workflow precisa consultar somente a operaÃ§Ã£o assÃ­ncrona iniciada pelo Cloud Run Job."
+    error_message = "O Workflow precisa consultar somente a operação assíncrona iniciada pelo Cloud Run Job."
   }
   assert {
     condition = (

@@ -132,7 +132,10 @@ def test_stream_demo_uses_fixed_correlated_queries_and_monitoring_signals() -> N
     )
     assert primary_by_name["read_backlog_metric"]["call"] == "http.get"
     assert backlog_args["auth"] == {"type": "OAuth2"}
-    assert backlog_args["url"] == '${"https://monitoring.googleapis.com/v3/projects/" + project_id + "/timeSeries"}'
+    assert backlog_args["url"] == (
+        '${"https://monitoring.googleapis.com/v3/projects/"'
+        ' + project_id + "/timeSeries"}'
+    )
     assert "pubsub.googleapis.com/subscription/num_undelivered_messages" in backlog_filter
     assert primary_by_name["require_time_series"] == {
         "switch": [{"condition": "${len(time_series) == 0}", "next": "retry_or_fail"}]

@@ -166,7 +166,9 @@ def test_cleanup_dataflow_graph_bounds_discovery_and_cancels_only_unique_match()
         "${page_count >= 10}": "retry_discovery",
     }
     assert cleanup_steps["guard_next_page"]["next"] == "advance_page"
-    assert candidate_values["candidate_labels"] == '${default(map.get(candidate, "labels"), json.decode("{}"))}'
+    assert candidate_values["candidate_labels"] == (
+        '${default(map.get(candidate, "labels"), json.decode("{}"))}'
+    )
     (candidate_condition,) = candidate_routes
     assert candidate_routes[candidate_condition] == "classify_match"
     assert "candidate.name == job_name" in candidate_condition
