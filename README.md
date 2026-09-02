@@ -18,16 +18,15 @@ contratos versionados do projeto.
 | ingestão Batch e Streaming com Bronze, Silver e Gold | [Arquitetura](#arquitetura), `src/`, `workflows/` e `dbt/models/` | implementado; execução local validada |
 | tratamento, integração e camada analítica | `dbt/models/staging/`, `dbt/models/silver/` e `dbt/models/gold/` | implementado e coberto por contratos |
 | duplicidade, nulos, relacionamentos e consistência | `config/quality_rules.yml`, `dbt/models/quality/` e [catálogo](docs/data-catalog.md) | implementado |
-| monitoramento operacional | `infra/stack/monitoring.tf`, `ops/observability.yml` e [runbooks](docs/runbooks.md) | declarado em Terraform; prova em cloud pendente |
-| FinOps e estimativa de custo | [FinOps](docs/finops.md), `ops/cost_profiles.yml` e `infra/stack/budget.tf` | implementado e validado localmente |
-| solução em cloud | `infra/bootstrap/`, `infra/stack/` e [pré-requisitos](docs/cloud-prerequisites.md) | IaC concluída; `apply` depende de conta autorizada |
+| monitoramento operacional | `infra/stack/monitoring.tf`, `ops/observability.yml` e [runbooks](docs/runbooks.md) | dashboard, métricas e alertas provisionados; sinais operacionais dependem das execuções |
+| FinOps e estimativa de custo | [FinOps](docs/finops.md), `ops/cost_profiles.yml` e `infra/stack/budget.tf` | orçamento ativo; limites de consulta e processamento aplicados |
+| solução em cloud | `infra/bootstrap/`, `infra/stack/` e [pré-requisitos](docs/cloud-prerequisites.md) | bootstrap e stack aplicados; plano final sem mudanças e Workflows ativos |
 | ferramentas, justificativas e trade-offs | [Ferramentas e escolhas](#ferramentas-e-escolhas), [trade-offs](#trade-offs-assumidos) e [ADRs](docs/adr/README.md) | documentado |
 | possível aplicação da Gold em IA | [Possibilidades futuras](#possibilidades-futuras) | documentado; não apresentado como execução atual |
 | código, qualidade e documentação | `src/`, `tests/`, `.github/workflows/ci.yml` e [Documentos](#documentos) | 494 testes locais; cobertura acima de 90% |
-| histórico Git, branches e PRs | branch pública `main` e commit raiz sanitizado | limitação: o histórico público não demonstra a evolução do desenvolvimento |
+| histórico Git, branches e PRs | histórico público, mensagens descritivas e merges preservados | evolução registrada; somente a branch de entrega `main` permanece publicada |
 
-O vídeo executivo é entregue separadamente pela plataforma acadêmica e não faz
-parte do repositório público.
+O link do vídeo executivo será incluído aqui depois da publicação da gravação.
 
 ## Fontes oficiais
 
@@ -295,7 +294,9 @@ O código e a documentação técnica estão no repositório
 
 ## Limitações conhecidas
 
-Sem projeto GCP com billing, credenciais e autorização, este checkout não prova
-IAM efetivo, custo real, `apply`, BigQuery/Dataflow ou alertas no Console. Esses
-itens dependem de execução em uma conta cloud e não são apresentados como
-sucesso local.
+O projeto GCP, o bootstrap, as imagens, os schemas e o stack principal já foram
+implantados. Um plano novo do Terraform confirmou convergência sem mudanças; os
+dois Workflows estão ativos e o agendamento permanece pausado para evitar consumo
+involuntário. As execuções Batch e Streaming e o custo efetivo só são tratados
+como concluídos depois de seus próprios recibos. Evidência local não substitui
+resultado de cloud.
