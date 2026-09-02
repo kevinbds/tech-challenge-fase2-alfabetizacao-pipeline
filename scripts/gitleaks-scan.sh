@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="/usr/bin:/mingw64/bin:${PATH:-}"
+
 version="8.30.1"
 case "$(uname -s)" in
   Linux*)

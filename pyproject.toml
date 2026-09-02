@@ -9,6 +9,7 @@ description = "Pipeline híbrido de indicadores de alfabetização para o Tech C
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "click>=8.3.3,<8.5",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.10,<3",
     "rich>=14,<15",
@@ -26,7 +27,7 @@ cloud = [
     "google-cloud-pubsub>=2.31,<3",
     "google-cloud-storage>=2.19,<3.2",
     "google-cloud-workflows>=1.18,<2",
-    "pyarrow>=18,<21",
+    "pyarrow>=23.0.1,<24",
 ]
 dataflow = [
     "apache-beam[gcp]==2.75.0",
@@ -40,17 +41,24 @@ dbt = [
 ]
 quality = [
     "jsonschema>=4.25,<5",
-    "sqlfluff>=3.4,<4",
-    "sqlfluff-templater-dbt>=3.4,<4",
+    "sqlfluff>=4.2.2,<5",
+    "sqlfluff-templater-dbt>=4.2.2,<5",
 ]
 dev = [
     "basedpyright>=1.31,<2",
     "hypothesis>=6.138,<7",
+    "pip-audit==2.9.0",
     "pyarrow-stubs>=20.0.0.20260819,<21",
-    "pytest>=8.4,<9",
+    "pytest>=9.0.3,<10",
     "pytest-cov>=6.2,<7",
     "pytest-randomly>=4,<5",
     "ruff>=0.12,<1",
+]
+
+[tool.uv]
+override-dependencies = [
+    "cryptography>=50,<51",
+    "httplib2>=0.32,<1",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -60,7 +68,7 @@ packages = ["src/alfabetizacao_pipeline"]
 typeCheckingMode = "all"
 pythonVersion = "3.13"
 pythonPlatform = "All"
-include = ["src", "tests"]
+include = ["src", "tests", "containers"]
 exclude = ["**/__pycache__", "**/.venv", "**/build", "**/dist"]
 reportUnusedCallResult = "error"
 reportUnnecessaryTypeIgnoreComment = "error"
@@ -71,7 +79,7 @@ reportPrivateUsage = "error"
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "containers"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -129,3 +137,6 @@ max_line_length = 100
 [tool.sqlfluff.templater.jinja]
 load_macros_from_path = "dbt/lint_macros,dbt/macros"
 apply_dbt_builtins = true
+
+[tool.sqlfluff.templater.jinja.context]
+partitions_to_replace = "date(ano, 1, 1)"

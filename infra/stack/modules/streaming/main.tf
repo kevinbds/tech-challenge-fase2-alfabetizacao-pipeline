@@ -1,26 +1,8 @@
 resource "google_pubsub_schema" "municipal_rate" {
-  project = var.project_id
-  name    = "${var.name_prefix}-municipal-literacy-rate-v1"
-  type    = "AVRO"
-  definition = jsonencode({
-    type      = "record"
-    name      = "MunicipalLiteracyRateUpdatedV1"
-    namespace = "br.com.fiap.alfabetizacao.v1"
-    fields = [
-      { name = "schema_version", type = "string", default = "1.0" },
-      { name = "event_id", type = "string" },
-      { name = "event_type", type = "string", default = "MunicipalLiteracyRateUpdated" },
-      { name = "simulation", type = "boolean", default = true },
-      { name = "event_time", type = "string" },
-      { name = "ano", type = "int" },
-      { name = "id_municipio", type = "string" },
-      { name = "rede", type = "string" },
-      { name = "taxa_alfabetizacao", type = "double" },
-      { name = "taxa_participacao", type = ["null", "double"], default = null },
-      { name = "producer", type = "string" },
-      { name = "correlation_id", type = "string" },
-    ]
-  })
+  project    = var.project_id
+  name       = "${var.name_prefix}-municipal-literacy-rate-v1"
+  type       = "AVRO"
+  definition = var.municipal_rate_schema_definition
 }
 
 resource "google_pubsub_topic" "events" {
@@ -30,7 +12,11 @@ resource "google_pubsub_topic" "events" {
 
   schema_settings {
     schema   = google_pubsub_schema.municipal_rate.id
-    encoding = "JSON"
+    encoding = "BINARY"
+  }
+
+  message_storage_policy {
+    allowed_persistence_regions = [var.region]
   }
 
   message_retention_duration = "86400s"
@@ -42,6 +28,10 @@ resource "google_pubsub_topic" "dead_letter" {
   project = var.project_id
   name    = "${var.name_prefix}-${each.key}-dlq"
   labels  = var.labels
+
+  message_storage_policy {
+    allowed_persistence_regions = [var.region]
+  }
 }
 
 resource "google_pubsub_subscription" "raw_archive" {
@@ -54,6 +44,10 @@ resource "google_pubsub_subscription" "raw_archive" {
   message_retention_duration   = "2592000s"
   retain_acked_messages        = false
   enable_exactly_once_delivery = false
+
+  expiration_policy {
+    ttl = ""
+  }
 
   cloud_storage_config {
     bucket                   = var.streaming_bucket
@@ -91,6 +85,10 @@ resource "google_pubsub_subscription" "dataflow" {
   retain_acked_messages        = false
   enable_exactly_once_delivery = false
 
+  expiration_policy {
+    ttl = ""
+  }
+
   dead_letter_policy {
     dead_letter_topic     = google_pubsub_topic.dead_letter["dataflow"].id
     max_delivery_attempts = 5
@@ -113,4 +111,21 @@ resource "google_pubsub_subscription" "dead_letter_audit" {
   ack_deadline_seconds       = 60
   message_retention_duration = "2592000s"
   retain_acked_messages      = false
+
+  expiration_policy {
+    ttl = ""
+  }
+}
+
+output "subscription_expiration_policy_ttls" {
+  value = concat(
+    [
+      google_pubsub_subscription.raw_archive.expiration_policy[0].ttl,
+      google_pubsub_subscription.dataflow.expiration_policy[0].ttl,
+    ],
+    [
+      for subscription in values(google_pubsub_subscription.dead_letter_audit) :
+      subscription.expiration_policy[0].ttl
+    ],
+  )
 }

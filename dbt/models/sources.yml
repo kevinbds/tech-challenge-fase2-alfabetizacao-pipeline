@@ -10,6 +10,10 @@ sources:
       - name: meta_alfabetizacao_uf
       - name: meta_alfabetizacao_municipio
       - name: municipio
+  - name: bronze_restricted
+    database: "{{ env_var('GCP_PROJECT_ID', 'local-offline-project') }}"
+    schema: bronze_restricted
+    tables:
       - name: alunos
   - name: ops
     database: "{{ env_var('GCP_PROJECT_ID', 'local-offline-project') }}"
@@ -18,8 +22,11 @@ sources:
       - name: release_files
       - name: active_release
       - name: release_registry
-      - name: stream_latest
-      - name: stream_event_audit
+  - name: quality
+    database: "{{ env_var('GCP_PROJECT_ID', 'local-offline-project') }}"
+    schema: quality
+    tables:
+      - name: release_results
   - name: streaming
     database: "{{ env_var('GCP_PROJECT_ID', 'local-offline-project') }}"
     schema: silver

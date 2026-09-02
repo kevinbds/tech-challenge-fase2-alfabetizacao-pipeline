@@ -1,9 +1,13 @@
 project_id              = "seu-projeto-gcp"
+region                  = "us-central1"
 source_dataset_location = "PREENCHA_COM_BQ_SHOW"
 state_bucket_name       = "seu-projeto-gcp-fiap-fase2-tfstate"
 artifacts_bucket_name   = "seu-projeto-gcp-fiap-fase2-artifacts"
 
-# Só preencha após autorizar o remoto. Não há segredo neste arquivo.
-github_repository  = null
-billing_account_id = null
+# Repositório público autorizado para a identidade da CI.
+github_repository  = "kevinbds/tech-challenge-fase2-alfabetizacao-pipeline"
+github_ref         = "refs/heads/main"
+# Obrigatório quando o stack criar o budget (o exemplo do stack usa BRL). Use
+# exatamente o mesmo ID em infra/stack/terraform.tfvars.
+billing_account_id = "000000-000000-000000"
 deletion_protection = true # mude para false só no apply preparatório do teardown autorizado

@@ -1,0 +1,140 @@
+version: 2
+
+unit_tests:
+  - name: public_indicador_expoe_somente_release_ativa
+    model: public_indicador_municipio
+    given:
+      - input: ref('indicador_municipio')
+        format: sql
+        rows: |
+          select 'active-release' release_id, 2026 ano, date '2026-01-01' ano_particao,
+                 '3550308' id_municipio, 'Sao Paulo' nome_municipio, 'SP' sigla_uf,
+                 'municipal' rede, 68 taxa_alfabetizacao, null media_portugues,
+                 null proporcao_aluno_nivel_0, null proporcao_aluno_nivel_1,
+                 null proporcao_aluno_nivel_2, null proporcao_aluno_nivel_3,
+                 null proporcao_aluno_nivel_4, null proporcao_aluno_nivel_5,
+                 null proporcao_aluno_nivel_6, null proporcao_aluno_nivel_7,
+                 null proporcao_aluno_nivel_8
+          union all
+          select 'candidate-release', 2025, date '2025-01-01', '3550308',
+                 'Sao Paulo', 'SP', 'municipal', 99, null,
+                 null, null, null, null, null, null, null, null, null
+          union all
+          select 'prior-release', 2024, date '2024-01-01', '3550308',
+                 'Sao Paulo', 'SP', 'municipal', 60, null,
+                 null, null, null, null, null, null, null, null, null
+      - input: source('ops', 'active_release')
+        format: sql
+        rows: "select true singleton_key, 'active-release' release_id"
+      - input: source('ops', 'release_registry')
+        format: sql
+        rows: |
+          select 'active-release' release_id, 'active' status, 2026 reference_year,
+                 timestamp '2026-06-01 00:00:00' promoted_at,
+                 'prior-release' baseline_release_id
+          union all
+          select 'prior-release', 'inactive', 2024, timestamp '2024-06-01 00:00:00',
+                 '__bootstrap__'
+          union all
+          select 'candidate-release', 'inactive', 2025, timestamp '2025-06-01 00:00:00',
+                 'prior-release'
+    expect:
+      rows:
+        - {release_id: active-release, id_municipio: '3550308', taxa_alfabetizacao: 68}
+        - {release_id: prior-release, id_municipio: '3550308', taxa_alfabetizacao: 60}
+
+  - name: public_indicador_falha_fechado_com_ponteiro_ambiguo
+    model: public_indicador_municipio
+    given:
+      - input: ref('indicador_municipio')
+        format: sql
+        rows: |
+          select 'active-release' release_id, 2024 ano, date '2024-01-01' ano_particao,
+                 '3550308' id_municipio, 'Sao Paulo' nome_municipio, 'SP' sigla_uf,
+                 'municipal' rede, 68 taxa_alfabetizacao, null media_portugues,
+                 null proporcao_aluno_nivel_0, null proporcao_aluno_nivel_1,
+                 null proporcao_aluno_nivel_2, null proporcao_aluno_nivel_3,
+                 null proporcao_aluno_nivel_4, null proporcao_aluno_nivel_5,
+                 null proporcao_aluno_nivel_6, null proporcao_aluno_nivel_7,
+                 null proporcao_aluno_nivel_8
+      - input: source('ops', 'active_release')
+        format: sql
+        rows: |
+          select true singleton_key, 'active-release' release_id
+          union all select true, 'other-release'
+      - input: source('ops', 'release_registry')
+        format: sql
+        rows: |
+          select 'active-release' release_id, 'active' status, 2024 reference_year,
+                 timestamp '2024-06-01 00:00:00' promoted_at,
+                 '__bootstrap__' baseline_release_id
+    expect:
+      rows: []
+
+  - name: public_comparativo_resolve_sobreposicao_na_cadeia_ativa
+    model: public_comparativo_meta_resultado
+    given:
+      - input: ref('comparativo_meta_resultado')
+        format: sql
+        rows: |
+          select 'prior-release' release_id, 2024 ano_meta, 2024 ano_resultado,
+                 date '2024-01-01' ano_particao, 'municipio' nivel_geografico,
+                 '3550308' id_geografia, 'São Paulo' nome_geografia,
+                 'municipal' rede, 2024 ano_referencia, 67 meta_alfabetizacao,
+                 68 taxa_resultado, 1 gap_pp, 'atingida' status_meta
+          union all
+          select 'prior-release', 2030, null, date '2030-01-01', 'municipio',
+                 '3550308', 'São Paulo', 'municipal', 2024, 90, null, null, null
+          union all
+          select 'active-release', 2030, null, date '2030-01-01', 'municipio',
+                 '3550308', 'São Paulo', 'municipal', 2025, 92, null, null, null
+          union all
+          select 'candidate-release', 2030, null, date '2030-01-01', 'municipio',
+                 '3550308', 'São Paulo', 'municipal', 2026, 99, null, null, null
+      - input: source('ops', 'active_release')
+        format: sql
+        rows: "select true singleton_key, 'active-release' release_id"
+      - input: source('ops', 'release_registry')
+        format: sql
+        rows: |
+          select 'active-release' release_id, 'active' status, 2025 reference_year,
+                 timestamp '2025-06-01 00:00:00' promoted_at,
+                 'prior-release' baseline_release_id
+          union all
+          select 'prior-release', 'inactive', 2024,
+                 timestamp '2024-06-01 00:00:00', '__bootstrap__'
+    expect:
+      rows:
+        - {release_id: prior-release, ano_meta: 2024, id_geografia: '3550308', nome_geografia: São Paulo, meta_alfabetizacao: 67, taxa_resultado: 68, status_meta: atingida}
+        - {release_id: active-release, ano_meta: 2030, id_geografia: '3550308', nome_geografia: São Paulo, meta_alfabetizacao: 92, taxa_resultado: null, status_meta: null}
+
+  - name: public_evolucao_expoe_somente_release_ativa
+    model: public_evolucao_alfabetizacao
+    given:
+      - input: ref('evolucao_alfabetizacao')
+        format: sql
+        rows: |
+          select 'active-release' release_id, 2024 ano, date '2024-01-01' ano_particao,
+                 '3550308' id_municipio, 'Sao Paulo' nome_municipio, 'SP' sigla_uf,
+                 'municipal' rede, 68 taxa_alfabetizacao, null media_portugues,
+                 null proporcao_aluno_nivel_0, null proporcao_aluno_nivel_1,
+                 null proporcao_aluno_nivel_2, null proporcao_aluno_nivel_3,
+                 null proporcao_aluno_nivel_4, null proporcao_aluno_nivel_5,
+                 null proporcao_aluno_nivel_6, null proporcao_aluno_nivel_7,
+                 null proporcao_aluno_nivel_8, 60 taxa_ano_anterior, 8 variacao_pp
+          union all
+          select 'candidate-release', 2024, date '2024-01-01', '3550308',
+                 'Sao Paulo', 'SP', 'municipal', 99, null,
+                 null, null, null, null, null, null, null, null, null, 60, 39
+      - input: source('ops', 'active_release')
+        format: sql
+        rows: "select true singleton_key, 'active-release' release_id"
+      - input: source('ops', 'release_registry')
+        format: sql
+        rows: |
+          select 'active-release' release_id, 'active' status, 2024 reference_year,
+                 timestamp '2024-06-01 00:00:00' promoted_at,
+                 '__bootstrap__' baseline_release_id
+    expect:
+      rows:
+        - {release_id: active-release, id_municipio: '3550308', taxa_alfabetizacao: 68, variacao_pp: 8}

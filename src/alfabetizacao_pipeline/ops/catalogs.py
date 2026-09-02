@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 @dataclass(frozen=True, slots=True)
 class AlertNotFoundError(Exception):
-    """Raised when an alert identifier is absent from the catalog."""
+    """Carry the missing stable identifier into operator diagnostics."""
 
     alert_id: str
 
@@ -29,7 +29,7 @@ class SloContract(BaseModel):
 
 
 class AlertBase(BaseModel):
-    """Fields shared by monitored metrics and budget notifications."""
+    """Keep alert evaluation semantics identical across automation surfaces."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
@@ -42,14 +42,14 @@ class AlertBase(BaseModel):
 
 
 class MetricAlert(AlertBase):
-    """An alert evaluated from a Cloud Monitoring metric."""
+    """Require a metric name when the discriminator selects Cloud Monitoring."""
 
     signal_type: Literal["monitoring_metric"]
     metric_type: str
 
 
 class BudgetAlert(AlertBase):
-    """A billing budget notification delivered through Pub/Sub."""
+    """Require a Pub/Sub destination when the discriminator selects billing."""
 
     signal_type: Literal["budget_notification"]
     notification_topic: str
@@ -111,10 +111,10 @@ class RunContracts(BaseModel):
 
 
 def load_observability(path: Path) -> ObservabilityCatalog:
-    """Parse the JSON-compatible YAML observability contract."""
+    """Reject malformed or unknown observability fields at the file boundary."""
     return ObservabilityCatalog.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def load_run_contracts(path: Path) -> RunContracts:
-    """Parse immutable build and teardown contracts."""
+    """Reject malformed or unknown deployment fields at the file boundary."""
     return RunContracts.model_validate_json(path.read_text(encoding="utf-8"))

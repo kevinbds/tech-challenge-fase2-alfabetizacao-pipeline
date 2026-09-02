@@ -4,6 +4,15 @@ declare inserted_rules int64;
 
 begin transaction;
 
+assert (
+    select count(*)
+    from `{{ project_id }}.ops.release_registry`
+    where
+        release_id = target_release
+        and status = 'succeeded'
+        and baseline_release_id is not null
+) = 1 as 'candidate must have one frozen quality baseline';
+
 set calculated_rules = (
     select count(*) from `{{ project_id }}.quality.release_metrics`
     where release_id = target_release
@@ -19,7 +28,8 @@ insert into `{{ project_id }}.quality.release_results` (
     metric_value,
     severity,
     action,
-    details
+    details,
+    evaluated_at
 )
 select
     release_id,
@@ -27,7 +37,8 @@ select
     metric_value,
     severity,
     action,
-    details
+    details,
+    current_timestamp() as evaluated_at
 from `{{ project_id }}.quality.release_metrics`
 where release_id = target_release;
 

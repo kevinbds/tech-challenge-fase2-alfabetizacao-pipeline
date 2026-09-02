@@ -20,14 +20,18 @@ def _load(path: str) -> dict[str, JsonValue]:
 
 
 def test_ci_when_workflow_is_parsed() -> None:
-    # Given: the pull-request CI workflow encoded as YAML-compatible JSON.
     workflow = _load(".github/workflows/ci.yml")
 
-    # When: permissions, jobs and action references are inspected structurally.
     permissions = _mapping(workflow["permissions"])
     jobs = _mapping(workflow["jobs"])
-    python_job = _mapping(jobs["python"])
-    expected_jobs = {"python", "dbt_sql", "terraform", "contracts_docs", "secret_scan"}
+    expected_jobs = {
+        "python",
+        "dependency_audit",
+        "dbt_sql",
+        "terraform",
+        "contracts_docs",
+        "secret_scan",
+    }
     uses: list[str] = []
     for job_name in expected_jobs:
         job = _mapping(jobs[job_name])
@@ -37,26 +41,46 @@ def test_ci_when_workflow_is_parsed() -> None:
             if isinstance(action, str):
                 uses.append(action)
 
-    # Then: CI is least-privilege and every action is pinned to a full SHA.
     assert permissions == {"contents": "read"}
     assert expected_jobs <= jobs.keys()
     assert uses
     assert all("@" in action and len(action.rsplit("@", 1)[1]) == 40 for action in uses)
     assert "pull_request" in _sequence(workflow["on"])
-    assert _mapping(python_job["env"])["ALFABETIZACAO_VERIFY_ENTRYPOINTS"] == "1"
+
+
+def test_ci_when_python_dependencies_are_installed_then_audit_is_frozen() -> None:
+    workflow = _load(".github/workflows/ci.yml")
+
+    jobs = _mapping(workflow["jobs"])
+    python_job = _mapping(jobs["python"])
+    dependency_audit_job = _mapping(jobs["dependency_audit"])
+    run_commands = [
+        command
+        for step_value in _sequence(python_job["steps"])
+        if isinstance(command := _mapping(step_value).get("run"), str)
+    ]
+
+    assert "uv run --frozen pip-audit --local" in run_commands
+    audit_commands = [
+        command
+        for step_value in _sequence(dependency_audit_job["steps"])
+        if isinstance(command := _mapping(step_value).get("run"), str)
+    ]
+
+    assert (
+        "docker build --target dataflow-dependency-audit --file containers/dataflow.Dockerfile ."
+    ) in audit_commands
 
 
 def test_deploy_when_workflow_is_parsed() -> None:
-    # Given: the protected, manual deployment workflow.
     workflow = _load(".github/workflows/deploy.yml")
 
-    # When: triggers and job-level authority are inspected.
     jobs = _mapping(workflow["jobs"])
     deploy = _mapping(jobs["deploy"])
     permissions = _mapping(deploy["permissions"])
+    timeout_minutes = deploy["timeout-minutes"]
     serialized = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
 
-    # Then: deployment is manual, environment-protected, WIF-only and keyless.
     assert workflow["on"] == ["workflow_dispatch"]
     assert deploy["environment"] == "production"
     assert permissions == {"contents": "read", "id-token": "write"}
@@ -64,3 +88,8 @@ def test_deploy_when_workflow_is_parsed() -> None:
     assert "service_account" in serialized
     assert "credentials_json" not in serialized
     assert "service_account_key" not in serialized
+    assert "GCP_ARTIFACT_BUCKET" in serialized
+    assert "GCP_CLOUD_BUILD_SERVICE_ACCOUNT" in serialized
+    assert isinstance(timeout_minutes, int)
+    assert not isinstance(timeout_minutes, bool)
+    assert timeout_minutes >= 60

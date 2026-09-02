@@ -6,7 +6,7 @@ locals {
       command         = var.entrypoints["batch"].command
       args            = var.entrypoints["batch"].args
       timeout         = "3600s"
-      retries         = 1
+      retries         = 0
       cpu             = "1"
       memory          = "2Gi"
     }
@@ -33,6 +33,37 @@ locals {
   }
 
   stream_demo_source = file("${path.root}/../../workflows/stream_demo.yaml")
+  flex_template_metadata = {
+    name        = "Municipal literacy rate simulated stream"
+    description = "Template preparado; nenhum job é iniciado pelo Terraform"
+    streaming   = true
+    parameters = [
+      {
+        name     = "input_subscription"
+        label    = "Pub/Sub subscription"
+        helpText = "Assinatura Pub/Sub consumida pelo pipeline."
+      },
+      {
+        name     = "valid_table"
+        label    = "BigQuery valid staging target"
+        helpText = "Tabela BigQuery que recebe eventos válidos."
+      },
+      {
+        name     = "quarantine_table"
+        label    = "BigQuery quarantine target"
+        helpText = "Tabela BigQuery que recebe eventos rejeitados."
+      },
+    ]
+  }
+  flex_template_content = jsonencode({
+    image = var.images["dataflow_template"]
+    sdkInfo = {
+      language = "PYTHON"
+      version  = "2.75.0"
+    }
+    metadata = local.flex_template_metadata
+  })
+  flex_template_sha256 = sha256(local.flex_template_content)
 }
 
 resource "google_cloud_run_v2_job" "job" {
@@ -74,7 +105,17 @@ resource "google_cloud_run_v2_job" "job" {
         }
 
         env {
+          name  = "ALFABETIZACAO_BIGQUERY_LOCATION"
+          value = var.data_location
+        }
+
+        env {
           name  = "ALFABETIZACAO_MAX_BYTES_BILLED"
+          value = tostring(var.maximum_bytes_billed)
+        }
+
+        env {
+          name  = "DBT_MAXIMUM_BYTES_BILLED"
           value = tostring(var.maximum_bytes_billed)
         }
 
@@ -86,6 +127,21 @@ resource "google_cloud_run_v2_job" "job" {
         env {
           name  = "ALFABETIZACAO_IMAGE_DIGEST"
           value = each.value.image
+        }
+
+        env {
+          name  = "ALFABETIZACAO_LANDING_PREFIX"
+          value = "gs://${var.landing_bucket}/landing/batch"
+        }
+
+        env {
+          name  = "ALFABETIZACAO_BRONZE_PREFIX"
+          value = "gs://${var.bronze_bucket}/bronze"
+        }
+
+        env {
+          name  = "ALFABETIZACAO_MANIFEST_PREFIX"
+          value = "gs://${var.control_bucket}/manifests"
         }
 
         env {
@@ -105,25 +161,13 @@ resource "google_cloud_run_v2_job" "job" {
 }
 
 resource "google_storage_bucket_object" "flex_template" {
-  name   = "templates/municipal-literacy-rate/flex-template.json"
-  bucket = var.dataflow_bucket
-  content = jsonencode({
-    image = var.images["dataflow"]
-    sdk_info = {
-      language = "PYTHON"
-      version  = "2.75.0"
-    }
-    metadata = {
-      name        = "Municipal literacy rate simulated stream"
-      description = "Template preparado; nenhum job é iniciado pelo Terraform"
-      parameters = [
-        { name = "input_subscription", label = "Pub/Sub subscription" },
-        { name = "valid_table", label = "BigQuery valid staging target" },
-        { name = "quarantine_table", label = "BigQuery quarantine target" },
-        { name = "write_method", label = "BigQuery Storage Write API method" },
-      ]
-    }
-  })
+  name    = "templates/municipal-literacy-rate/${local.flex_template_sha256}.json"
+  bucket  = var.dataflow_bucket
+  content = local.flex_template_content
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "google_workflows_workflow" "batch" {
@@ -152,6 +196,27 @@ resource "google_workflows_workflow" "stream_demo" {
   labels              = var.labels
   deletion_protection = var.deletion_protection
 
+  user_env_vars = {
+    ALFABETIZACAO_FLEX_TEMPLATE_URI            = "gs://${var.dataflow_bucket}/${google_storage_bucket_object.flex_template.name}"
+    ALFABETIZACAO_DATAFLOW_SUBSCRIPTION        = var.dataflow_subscription_id
+    ALFABETIZACAO_VALID_TABLE                  = "${var.project_id}:silver.municipal_rate_stream"
+    ALFABETIZACAO_QUARANTINE_TABLE             = "${var.project_id}:quarantine.stream_events"
+    ALFABETIZACAO_DATAFLOW_SERVICE_ACCOUNT     = var.service_account_emails["dataflow"]
+    ALFABETIZACAO_DATAFLOW_SDK_CONTAINER_IMAGE = var.images["dataflow_sdk"]
+    ALFABETIZACAO_DATAFLOW_TEMP_LOCATION       = "gs://${var.dataflow_bucket}/temp"
+    ALFABETIZACAO_DATAFLOW_STAGING_LOCATION    = "gs://${var.dataflow_bucket}/staging"
+    ALFABETIZACAO_PRODUCER_JOB                 = google_cloud_run_v2_job.job["producer"].id
+    ALFABETIZACAO_TOPIC                        = var.stream_topic_name
+    ALFABETIZACAO_RAW_ARCHIVE_BUCKET           = var.archive_bucket
+    ALFABETIZACAO_RAW_ARCHIVE_PREFIX           = "raw"
+    ALFABETIZACAO_DBT_JOB                      = google_cloud_run_v2_job.job["dbt"].id
+    ALFABETIZACAO_MAXIMUM_BYTES_BILLED         = tostring(var.maximum_bytes_billed)
+    ALFABETIZACAO_DATA_LOCATION                = var.data_location
+    ALFABETIZACAO_GOLD_TABLE                   = "${var.project_id}.gold.indicador_atual_hibrido"
+    ALFABETIZACAO_DUPLICATE_AUDIT_TABLE        = "${var.project_id}.ops.stream_event_audit"
+    ALFABETIZACAO_BACKLOG_SUBSCRIPTION_IDS     = jsonencode(var.backlog_subscription_ids)
+  }
+
   source_contents = local.stream_demo_source
 
   depends_on = [google_cloud_run_v2_job.job]
@@ -177,7 +242,7 @@ resource "google_cloud_scheduler_job" "monthly_batch" {
   http_target {
     http_method = "POST"
     uri         = "https://workflowexecutions.googleapis.com/v1/${google_workflows_workflow.batch.id}/executions"
-    body        = base64encode(jsonencode({ argument = jsonencode({ trigger = "scheduler" }) }))
+    body        = base64encode(jsonencode({ argument = jsonencode({ trigger = "scheduler", year = var.batch_reference_year }) }))
 
     oauth_token {
       service_account_email = var.service_account_emails["scheduler"]

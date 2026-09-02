@@ -1,4 +1,4 @@
-{{ config(materialized='view', tags=['stream_demo']) }}
+{{ config(materialized='view', schema='gold', tags=['stream_demo']) }}
 
 with release_ativo as (
     select
@@ -41,6 +41,7 @@ simulacao_atual as (
 
 select
     lote.release_id,
+    simulacao.correlation_id,
     lote.ano,
     lote.ano_particao,
     lote.id_municipio,

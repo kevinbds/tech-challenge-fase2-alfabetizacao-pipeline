@@ -9,4 +9,3 @@ reproduzível sem sacrificar SQL e transações para consumo.
 Alternativas rejeitadas: somente BigQuery perde a fronteira clara de arquivo
 imutável; somente Data Lake exigiria outro mecanismo de consulta e promoção.
 Trade-off: há dois planos de acesso e retenção para governar.
-

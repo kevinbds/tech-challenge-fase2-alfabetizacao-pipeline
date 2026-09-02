@@ -62,7 +62,8 @@ class GcsManifestStore:
                 raise ManifestConflictError(uri=uri) from error
 
     def _checkpoint_uri(self, manifest: BatchManifest) -> str:
-        return (
-            f"{self._prefix}/{manifest.source}/ano={manifest.year}/run={manifest.run_id}/"
-            f"checkpoint={manifest.status.value}/manifest.json"
-        )
+        run_prefix = f"{self._prefix}/{manifest.source}/ano={manifest.year}/run={manifest.run_id}"
+        if manifest.status is BatchStatus.INCOMPLETE:
+            attempt_id = manifest.attempt_id or manifest.started_at.strftime("%Y%m%dT%H%M%S%fZ")
+            return f"{run_prefix}/attempt={attempt_id}/checkpoint=incomplete/manifest.json"
+        return f"{run_prefix}/checkpoint={manifest.status.value}/manifest.json"

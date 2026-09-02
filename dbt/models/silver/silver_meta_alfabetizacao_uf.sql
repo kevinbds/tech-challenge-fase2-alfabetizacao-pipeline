@@ -11,8 +11,9 @@
 with scoped as (
     select
         *,
-        date(ano, 1, 1) as ano_particao
+        cast(cast(ano as string) || '-01-01' as date) as ano_particao
     from {{ ref('stg_meta_alfabetizacao_uf') }}
-    where release_id = '{{ var("release_id") }}'
+    where
+        release_id = '{{ var("release_id") }}'
 )
 {{ deduplicate('scoped', ['release_id', 'ano', 'sigla_uf', 'rede'], payload) }}

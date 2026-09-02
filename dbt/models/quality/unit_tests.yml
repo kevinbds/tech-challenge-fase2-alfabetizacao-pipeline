@@ -1,0 +1,479 @@
+version: 2
+
+unit_tests:
+  - name: relacionamentos_comparam_somente_redes_equivalentes
+    model: relationship_measurements
+    given:
+      - input: ref('silver_alunos')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, '3550308' id_municipio,
+                 'estadual' rede
+          union all select 'local-release', 2024, '3550308', 'municipal'
+          union all select 'local-release', 2024, '3550308', 'federal'
+          union all select 'local-release', 2024, '3550308', 'privada'
+      - input: ref('silver_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, '3550308' id_municipio,
+                 'estadual' rede
+          union all select 'local-release', 2024, '3550308', 'municipal'
+          union all select 'local-release', 2024, '3550308', 'total'
+      - input: ref('silver_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, 'SP' sigla_uf, 'publica' rede
+          union all select 'local-release', 2024, 'SP', 'estadual'
+      - input: ref('silver_meta_alfabetizacao_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, '3550308' id_municipio,
+                 'municipal' rede, 70 meta_alfabetizacao_2024,
+                 null meta_alfabetizacao_2025, null meta_alfabetizacao_2026,
+                 null meta_alfabetizacao_2027, null meta_alfabetizacao_2028,
+                 null meta_alfabetizacao_2029, null meta_alfabetizacao_2030
+          union all select 'local-release', 2024, '3550308', 'total', 70,
+                 null, null, null, null, null, null
+      - input: ref('silver_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, 'SP' sigla_uf,
+                 'publica' rede, 70 meta_alfabetizacao_2024,
+                 null meta_alfabetizacao_2025, null meta_alfabetizacao_2026,
+                 null meta_alfabetizacao_2027, null meta_alfabetizacao_2028,
+                 null meta_alfabetizacao_2029, null meta_alfabetizacao_2030
+          union all select 'local-release', 2024, 'SP', 'estadual', 70,
+                 null, null, null, null, null, null
+      - input: source('diretorios', 'municipio')
+        format: sql
+        rows: "select '3550308' id_municipio, 'SP' sigla_uf"
+    expect:
+      rows:
+        - {relation_name: alunos_diretorio_municipio, checked_rows: 4, missing_rows: 0}
+        - {relation_name: municipio_diretorio, checked_rows: 3, missing_rows: 0}
+        - {relation_name: uf_diretorio, checked_rows: 2, missing_rows: 0}
+        - {relation_name: meta_municipio_diretorio, checked_rows: 2, missing_rows: 0}
+        - {relation_name: meta_uf_diretorio, checked_rows: 2, missing_rows: 0}
+        - {relation_name: meta_municipio_resultado, checked_rows: 1, missing_rows: 0}
+        - {relation_name: resultado_uf_meta, checked_rows: 1, missing_rows: 0}
+
+  - name: volume_compara_releases_ao_avancar_ano
+    model: release_volume_metric
+    given:
+      - input: ref('silver_municipio')
+        format: sql
+        rows: |
+          select 'release-2024' release_id, 2024 ano
+          union all
+          select 'local-release', 2025
+      - input: source('ops', 'release_registry')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'succeeded' status,
+                 'release-2024' baseline_release_id
+    expect:
+      rows:
+        - {baseline_count: 1, target_count: 1, volume_delta: 0}
+
+  - name: gold_core_aceita_resultado_nulo_somente_em_meta_futura
+    model: release_quality_measurements
+    given:
+      - input: ref('relationship_measurements')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'alunos_diretorio_municipio' relation_name, 1 checked_rows, 0 missing_rows
+          union all select 'local-release', 'municipio_diretorio', 1, 0
+          union all select 'local-release', 'uf_diretorio', 1, 0
+          union all select 'local-release', 'meta_municipio_diretorio', 1, 0
+          union all select 'local-release', 'meta_uf_diretorio', 1, 0
+          union all select 'local-release', 'meta_municipio_resultado', 1, 0
+          union all select 'local-release', 'resultado_uf_meta', 1, 0
+      - input: ref('indicador_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, '3550308' id_municipio,
+                 'São Paulo' nome_municipio, 'SP' sigla_uf, 'municipal' rede,
+                 68 taxa_alfabetizacao
+      - input: ref('comparativo_meta_resultado')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano_meta,
+                 cast(null as integer) ano_resultado, 'municipio' nivel_geografico,
+                 '3550308' id_geografia, 'São Paulo' nome_geografia,
+                 'municipal' rede, 2024 ano_referencia, 67 meta_alfabetizacao,
+                 cast(null as double) taxa_resultado,
+                 cast(null as double) gap_pp, cast(null as varchar) status_meta
+          union all
+          select 'local-release', 2029, null, 'municipio', '3550308',
+                 'São Paulo', 'municipal', 2024, 85, null, null, null
+          union all
+          select 'local-release', 2030, null, 'municipio', '3550308',
+                 'São Paulo', 'municipal', 2024, 90, null, null, null
+      - input: source('ops', 'release_registry')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'succeeded' status,
+                 2024 reference_year, 'baseline-release' baseline_release_id
+      - input: ref('silver_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 10 media_portugues,
+                 68 taxa_alfabetizacao,
+                 0 proporcao_aluno_nivel_0, 0 proporcao_aluno_nivel_1,
+                 0 proporcao_aluno_nivel_2, 0 proporcao_aluno_nivel_3,
+                 0 proporcao_aluno_nivel_4, 0 proporcao_aluno_nivel_5,
+                 0 proporcao_aluno_nivel_6, 0 proporcao_aluno_nivel_7,
+                 0 proporcao_aluno_nivel_8
+          union all
+          select 'baseline-release', 10, 60,
+                 0, 0, 0, 0, 0, 0, 0, 0, 0
+      - input: ref('silver_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 10 media_portugues,
+                 70 taxa_alfabetizacao,
+                 0 proporcao_aluno_nivel_0, 0 proporcao_aluno_nivel_1,
+                 0 proporcao_aluno_nivel_2, 0 proporcao_aluno_nivel_3,
+                 0 proporcao_aluno_nivel_4, 0 proporcao_aluno_nivel_5,
+                 0 proporcao_aluno_nivel_6, 0 proporcao_aluno_nivel_7,
+                 0 proporcao_aluno_nivel_8
+      - input: ref('silver_alunos')
+        format: sql
+        rows: "select 'local-release' release_id, 10 proficiencia, 1 peso_aluno"
+      - input: ref('silver_meta_alfabetizacao_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 68 taxa_alfabetizacao,
+                 90 percentual_participacao,
+                 67 meta_alfabetizacao_2024, 70 meta_alfabetizacao_2025,
+                 75 meta_alfabetizacao_2026, 78 meta_alfabetizacao_2027,
+                 80 meta_alfabetizacao_2028, 85 meta_alfabetizacao_2029,
+                 90 meta_alfabetizacao_2030
+      - input: ref('silver_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 70 taxa_alfabetizacao,
+                 90 percentual_participacao,
+                 69 meta_alfabetizacao_2024, 72 meta_alfabetizacao_2025,
+                 75 meta_alfabetizacao_2026, 78 meta_alfabetizacao_2027,
+                 80 meta_alfabetizacao_2028, 85 meta_alfabetizacao_2029,
+                 90 meta_alfabetizacao_2030
+      - input: ref('silver_meta_alfabetizacao_brasil')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 71 taxa_alfabetizacao,
+                 90 percentual_participacao,
+                 70 meta_alfabetizacao_2024, 73 meta_alfabetizacao_2025,
+                 76 meta_alfabetizacao_2026, 79 meta_alfabetizacao_2027,
+                 82 meta_alfabetizacao_2028, 86 meta_alfabetizacao_2029,
+                 91 meta_alfabetizacao_2030
+    expect:
+      rows:
+        - {checked_rows: 7, missing_rows: 0, expected_relationship_count: 7, actual_relationship_count: 7, distinct_relationship_count: 7, missing_expected_relationship_count: 0, empty_relationship_count: 0, unexpected_relationship_count: 0, gold_row_count: 4, gold_null_count: 1, gold_future_null_count: 2, baseline_rows: 1, optional_null_delta: 0, invalid_measurements: 0}
+
+  - name: rr_2024_publica_incompleta_alerta_sem_bloquear_required_keys
+    model: release_quality_core
+    given:
+      - input: ref('release_quality_key_coverage')
+        format: sql
+        rows: |
+          select 6 covered_silver_tables, 6 covered_sources, 0 empty_sources,
+                 0 unexpected_sources, 0 null_rate, 0 duplicate_rate
+      - input: ref('release_quality_measurements')
+        format: sql
+        rows: |
+          select 7 checked_rows, 0 missing_rows,
+                 7 expected_relationship_count, 7 actual_relationship_count,
+                 7 distinct_relationship_count,
+                 0 missing_expected_relationship_count,
+                 0 empty_relationship_count,
+                 0 unexpected_relationship_count, 1 gold_row_count,
+                 0 gold_null_count, 1 baseline_rows, 0 optional_null_delta,
+                 0 invalid_measurements
+      - input: ref('release_percentage_metrics')
+        format: sql
+        rows: |
+          select 'percentage_ranges' rule_id, 0 metric_value, 'pass' severity,
+                 'promote' as "action", 'ranges' details
+          union all
+          select 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+      - input: ref('quarantine_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, 'RR' sigla_uf,
+                 'publica' rede,
+                 'taxa_alfabetizacao_and_percentual_participacao_missing' reason_code
+    expect:
+      format: sql
+      rows: |
+        select 'local-release' release_id, 'required_keys' rule_id, 0 metric_value,
+               'warning' severity, 'continue_with_alert' as "action",
+               'six_non_empty_sources_and_silver_required_keys_with_rr_2024_publica_exception' details
+        union all select 'local-release', 'uniqueness_after_quarantine', 0, 'pass', 'promote', 'six_silver_business_keys'
+        union all select 'local-release', 'relationships', 100, 'pass', 'promote', 'sete_relacoes_de_referencia'
+        union all select 'local-release', 'gold_core_nulls', 0, 'pass', 'promote', 'non_empty_gold_core_and_directory_columns'
+        union all select 'local-release', 'optional_null_delta', 0, 'pass', 'promote', 'media_portugues_pp_delta'
+        union all select 'local-release', 'percentage_ranges', 0, 'pass', 'promote', 'ranges'
+        union all select 'local-release', 'non_negative_measurements', 0, 'pass', 'promote', 'silver_measurements'
+        union all select 'local-release', 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+
+  - name: meta_brasil_publica_2030_ausente_bloqueia_percentage_ranges
+    model: release_percentage_metrics
+    given:
+      - input: ref('silver_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 70 taxa_alfabetizacao,
+                 0 proporcao_aluno_nivel_0, 0 proporcao_aluno_nivel_1,
+                 0 proporcao_aluno_nivel_2, 0 proporcao_aluno_nivel_3,
+                 0 proporcao_aluno_nivel_4, 0 proporcao_aluno_nivel_5,
+                 0 proporcao_aluno_nivel_6, 0 proporcao_aluno_nivel_7,
+                 100 proporcao_aluno_nivel_8
+      - input: ref('silver_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 70 taxa_alfabetizacao,
+                 0 proporcao_aluno_nivel_0, 0 proporcao_aluno_nivel_1,
+                 0 proporcao_aluno_nivel_2, 0 proporcao_aluno_nivel_3,
+                 0 proporcao_aluno_nivel_4, 0 proporcao_aluno_nivel_5,
+                 0 proporcao_aluno_nivel_6, 0 proporcao_aluno_nivel_7,
+                 100 proporcao_aluno_nivel_8
+      - input: ref('silver_meta_alfabetizacao_municipio')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 70 taxa_alfabetizacao,
+                 90 percentual_participacao,
+                 cast(null as double) meta_alfabetizacao_2024,
+                 cast(null as double) meta_alfabetizacao_2025,
+                 cast(null as double) meta_alfabetizacao_2026,
+                 cast(null as double) meta_alfabetizacao_2027,
+                 cast(null as double) meta_alfabetizacao_2028,
+                 cast(null as double) meta_alfabetizacao_2029,
+                 cast(null as double) meta_alfabetizacao_2030
+      - input: ref('silver_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, 'SP' sigla_uf,
+                 'publica' rede, 70 taxa_alfabetizacao, 90 percentual_participacao,
+                 cast(null as double) meta_alfabetizacao_2024,
+                 cast(null as double) meta_alfabetizacao_2025,
+                 cast(null as double) meta_alfabetizacao_2026,
+                 cast(null as double) meta_alfabetizacao_2027,
+                 cast(null as double) meta_alfabetizacao_2028,
+                 cast(null as double) meta_alfabetizacao_2029,
+                 cast(null as double) meta_alfabetizacao_2030
+      - input: ref('silver_meta_alfabetizacao_brasil')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'publica' rede,
+                 70 taxa_alfabetizacao, 90 percentual_participacao,
+                 cast(null as double) meta_alfabetizacao_2024,
+                 cast(null as double) meta_alfabetizacao_2025,
+                 cast(null as double) meta_alfabetizacao_2026,
+                 cast(null as double) meta_alfabetizacao_2027,
+                 cast(null as double) meta_alfabetizacao_2028,
+                 cast(null as double) meta_alfabetizacao_2029,
+                 cast(null as double) meta_alfabetizacao_2030
+    expect:
+      rows:
+        - {rule_id: percentage_ranges, metric_value: 1, severity: critical, action: quarantine_and_block, details: required_rates_participation_optional_targets_brasil_publica_2030_required}
+        - {rule_id: proportions_sum, metric_value: 0, severity: pass, action: promote, details: municipio_and_uf_sum_99_5_to_100_5}
+
+  - name: relacao_vazia_bloqueia_o_gate_mesmo_com_as_demais_completas
+    model: release_quality_core
+    given:
+      - input: ref('release_quality_key_coverage')
+        format: sql
+        rows: |
+          select 6 covered_silver_tables, 6 covered_sources, 0 empty_sources,
+                 0 unexpected_sources, 0 null_rate, 0 duplicate_rate
+      - input: ref('release_quality_measurements')
+        format: sql
+        rows: |
+          select 6 checked_rows, 0 missing_rows,
+                 7 expected_relationship_count, 7 actual_relationship_count,
+                 7 distinct_relationship_count,
+                 0 missing_expected_relationship_count,
+                 1 empty_relationship_count,
+                 0 unexpected_relationship_count, 1 gold_row_count,
+                 0 gold_null_count, 1 baseline_rows, 0 optional_null_delta,
+                 0 invalid_measurements
+      - input: ref('release_percentage_metrics')
+        format: sql
+        rows: |
+          select 'percentage_ranges' rule_id, 0 metric_value, 'pass' severity,
+                 'promote' as "action", 'ranges' details
+          union all
+          select 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+      - input: ref('quarantine_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select
+            cast(null as varchar) release_id, cast(null as integer) ano,
+            cast(null as varchar) sigla_uf, cast(null as varchar) rede,
+            cast(null as varchar) reason_code
+          where false
+    expect:
+      format: sql
+      rows: |
+        select 'local-release' release_id, 'required_keys' rule_id, 0 metric_value,
+               'pass' severity, 'promote' as "action",
+               'six_non_empty_sources_and_silver_required_keys' details
+        union all select 'local-release', 'uniqueness_after_quarantine', 0, 'pass', 'promote', 'six_silver_business_keys'
+        union all select 'local-release', 'relationships', 85.71428571428571, 'critical', 'quarantine_and_block', 'sete_relacoes_de_referencia'
+        union all select 'local-release', 'gold_core_nulls', 0, 'pass', 'promote', 'non_empty_gold_core_and_directory_columns'
+        union all select 'local-release', 'optional_null_delta', 0, 'pass', 'promote', 'media_portugues_pp_delta'
+        union all select 'local-release', 'percentage_ranges', 0, 'pass', 'promote', 'ranges'
+        union all select 'local-release', 'non_negative_measurements', 0, 'pass', 'promote', 'silver_measurements'
+        union all select 'local-release', 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+
+  - name: meta_uf_incompleta_fora_da_excecao_bloqueia_required_keys
+    model: release_quality_core
+    given:
+      - input: ref('release_quality_key_coverage')
+        format: sql
+        rows: |
+          select 6 covered_silver_tables, 6 covered_sources, 0 empty_sources,
+                 0 unexpected_sources, 0 null_rate, 0 duplicate_rate
+      - input: ref('release_quality_measurements')
+        format: sql
+        rows: |
+          select 7 checked_rows, 0 missing_rows,
+                 7 expected_relationship_count, 7 actual_relationship_count,
+                 7 distinct_relationship_count,
+                 0 missing_expected_relationship_count,
+                 0 empty_relationship_count,
+                 0 unexpected_relationship_count, 1 gold_row_count,
+                 0 gold_null_count, 1 baseline_rows, 0 optional_null_delta,
+                 0 invalid_measurements
+      - input: ref('release_percentage_metrics')
+        format: sql
+        rows: |
+          select 'percentage_ranges' rule_id, 0 metric_value, 'pass' severity,
+                 'promote' as "action", 'ranges' details
+          union all
+          select 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+      - input: ref('quarantine_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, 'SP' sigla_uf,
+                 'publica' rede, 'taxa_alfabetizacao_missing' reason_code
+          union all
+          select 'local-release', 2025, 'RR', 'publica',
+                 'taxa_alfabetizacao_and_percentual_participacao_missing'
+          union all
+          select 'local-release', 2024, 'RR', 'estadual',
+                 'taxa_alfabetizacao_and_percentual_participacao_missing'
+          union all
+          select 'local-release', 2024, 'RR', 'publica',
+                 'taxa_alfabetizacao_missing'
+    expect:
+      format: sql
+      rows: |
+        select 'local-release' release_id, 'required_keys' rule_id, 4 metric_value,
+               'critical' severity, 'quarantine_and_block' as "action",
+               'six_non_empty_sources_and_silver_required_keys' details
+        union all select 'local-release', 'uniqueness_after_quarantine', 0, 'pass', 'promote', 'six_silver_business_keys'
+        union all select 'local-release', 'relationships', 100, 'pass', 'promote', 'sete_relacoes_de_referencia'
+        union all select 'local-release', 'gold_core_nulls', 0, 'pass', 'promote', 'non_empty_gold_core_and_directory_columns'
+        union all select 'local-release', 'optional_null_delta', 0, 'pass', 'promote', 'media_portugues_pp_delta'
+        union all select 'local-release', 'percentage_ranges', 0, 'pass', 'promote', 'ranges'
+        union all select 'local-release', 'non_negative_measurements', 0, 'pass', 'promote', 'silver_measurements'
+        union all select 'local-release', 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+
+  - name: segunda_excecao_rr_2024_publica_bloqueia_required_keys
+    model: release_quality_core
+    given:
+      - input: ref('release_quality_key_coverage')
+        format: sql
+        rows: |
+          select 6 covered_silver_tables, 6 covered_sources, 0 empty_sources,
+                 0 unexpected_sources, 0 null_rate, 0 duplicate_rate
+      - input: ref('release_quality_measurements')
+        format: sql
+        rows: |
+          select 7 checked_rows, 0 missing_rows,
+                 7 expected_relationship_count, 7 actual_relationship_count,
+                 7 distinct_relationship_count,
+                 0 missing_expected_relationship_count,
+                 0 empty_relationship_count,
+                 0 unexpected_relationship_count, 1 gold_row_count,
+                 0 gold_null_count, 1 baseline_rows, 0 optional_null_delta,
+                 0 invalid_measurements
+      - input: ref('release_percentage_metrics')
+        format: sql
+        rows: |
+          select 'percentage_ranges' rule_id, 0 metric_value, 'pass' severity,
+                 'promote' as "action", 'ranges' details
+          union all
+          select 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+      - input: ref('quarantine_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 2024 ano, 'RR' sigla_uf,
+                 'publica' rede,
+                 'taxa_alfabetizacao_and_percentual_participacao_missing' reason_code
+          union all
+          select 'local-release', 2024, 'RR', 'publica',
+                 'taxa_alfabetizacao_and_percentual_participacao_missing'
+    expect:
+      format: sql
+      rows: |
+        select 'local-release' release_id, 'required_keys' rule_id, 1 metric_value,
+               'critical' severity, 'quarantine_and_block' as "action",
+               'six_non_empty_sources_and_silver_required_keys' details
+        union all select 'local-release', 'uniqueness_after_quarantine', 0, 'pass', 'promote', 'six_silver_business_keys'
+        union all select 'local-release', 'relationships', 100, 'pass', 'promote', 'sete_relacoes_de_referencia'
+        union all select 'local-release', 'gold_core_nulls', 0, 'pass', 'promote', 'non_empty_gold_core_and_directory_columns'
+        union all select 'local-release', 'optional_null_delta', 0, 'pass', 'promote', 'media_portugues_pp_delta'
+        union all select 'local-release', 'percentage_ranges', 0, 'pass', 'promote', 'ranges'
+        union all select 'local-release', 'non_negative_measurements', 0, 'pass', 'promote', 'silver_measurements'
+        union all select 'local-release', 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+
+  - name: sem_excecao_rr_2024_publica_required_keys_passa_sem_alerta
+    model: release_quality_core
+    given:
+      - input: ref('release_quality_key_coverage')
+        format: sql
+        rows: |
+          select 6 covered_silver_tables, 6 covered_sources, 0 empty_sources,
+                 0 unexpected_sources, 0 null_rate, 0 duplicate_rate
+      - input: ref('release_quality_measurements')
+        format: sql
+        rows: |
+          select 7 checked_rows, 0 missing_rows,
+                 7 expected_relationship_count, 7 actual_relationship_count,
+                 7 distinct_relationship_count,
+                 0 missing_expected_relationship_count,
+                 0 empty_relationship_count,
+                 0 unexpected_relationship_count, 1 gold_row_count,
+                 0 gold_null_count, 1 baseline_rows, 0 optional_null_delta,
+                 0 invalid_measurements
+      - input: ref('release_percentage_metrics')
+        format: sql
+        rows: |
+          select 'percentage_ranges' rule_id, 0 metric_value, 'pass' severity,
+                 'promote' as "action", 'ranges' details
+          union all
+          select 'proportions_sum', 0, 'pass', 'promote', 'proportions'
+      - input: ref('quarantine_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select
+            cast(null as varchar) release_id, cast(null as integer) ano,
+            cast(null as varchar) sigla_uf, cast(null as varchar) rede,
+            cast(null as varchar) reason_code
+          where false
+    expect:
+      format: sql
+      rows: |
+        select 'local-release' release_id, 'required_keys' rule_id, 0 metric_value,
+               'pass' severity, 'promote' as "action",
+               'six_non_empty_sources_and_silver_required_keys' details
+        union all select 'local-release', 'uniqueness_after_quarantine', 0, 'pass', 'promote', 'six_silver_business_keys'
+        union all select 'local-release', 'relationships', 100, 'pass', 'promote', 'sete_relacoes_de_referencia'
+        union all select 'local-release', 'gold_core_nulls', 0, 'pass', 'promote', 'non_empty_gold_core_and_directory_columns'
+        union all select 'local-release', 'optional_null_delta', 0, 'pass', 'promote', 'media_portugues_pp_delta'
+        union all select 'local-release', 'percentage_ranges', 0, 'pass', 'promote', 'ranges'
+        union all select 'local-release', 'non_negative_measurements', 0, 'pass', 'promote', 'silver_measurements'
+        union all select 'local-release', 'proportions_sum', 0, 'pass', 'promote', 'proportions'

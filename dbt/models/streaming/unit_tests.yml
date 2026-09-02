@@ -15,12 +15,16 @@ unit_tests:
                  70 taxa_alfabetizacao, 90 taxa_participacao,
                  'run-1' correlation_id, true simulation
           union all
+          select 'same', 'message-old', timestamp '2026-08-29 11:00:00',
+                 timestamp '2026-08-29 11:00:01', timestamp '2026-08-29 11:00:03',
+                 2024, '3550308', 'municipal', 70, 90, 'run-1', true
+          union all
           select 'same', 'message-new', timestamp '2026-08-29 12:00:00',
                  timestamp '2026-08-29 12:00:01', timestamp '2026-08-29 12:00:02',
                  2024, '3550308', 'municipal', 72, 91, 'run-1', true
     expect:
       rows:
-        - {event_id: same, taxa_alfabetizacao: 72, percentual_participacao: 91}
+        - {event_id: same, taxa_alfabetizacao: 72, percentual_participacao: 91, correlation_id: run-1}
   - name: stream_event_audit_registra_copia_descartada
     model: stream_event_audit
     given:
@@ -32,6 +36,10 @@ unit_tests:
                  timestamp '2026-08-29 11:00:01' publish_time,
                  timestamp '2026-08-29 11:00:02' ingestion_time,
                  'run-1' correlation_id
+          union all
+          select 'same', 'message-old', timestamp '2026-08-29 11:00:00',
+                 timestamp '2026-08-29 11:00:01', timestamp '2026-08-29 11:00:03',
+                 'run-1'
           union all
           select 'same', 'message-new', timestamp '2026-08-29 12:00:00',
                  timestamp '2026-08-29 12:00:01', timestamp '2026-08-29 12:00:02',

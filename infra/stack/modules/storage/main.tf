@@ -1,4 +1,10 @@
 locals {
+  bucket_prefix = "${var.project_id}-${substr(var.name_prefix, 0, 20)}"
+  ephemeral_buckets = toset([
+    "landing",
+    "streaming",
+    "dataflow",
+  ])
   buckets = {
     landing = {
       suffix = "landing"
@@ -6,7 +12,11 @@ locals {
     }
     bronze = {
       suffix = "bronze"
-      rules  = [{ age = 730, prefix = ["bronze/alunos/"] }]
+      rules  = []
+    }
+    control = {
+      suffix = "control"
+      rules  = [{ age = 730, prefix = ["manifests/"] }]
     }
     streaming = {
       suffix = "streaming"
@@ -29,7 +39,7 @@ resource "google_storage_bucket" "data" {
   for_each = local.buckets
 
   project                     = var.project_id
-  name                        = "${var.name_prefix}-${each.value.suffix}"
+  name                        = "${local.bucket_prefix}-${each.value.suffix}"
   location                    = var.location
   force_destroy               = !var.deletion_protection
   uniform_bucket_level_access = true
@@ -37,7 +47,14 @@ resource "google_storage_bucket" "data" {
   labels                      = var.labels
 
   versioning {
-    enabled = true
+    enabled = !contains(local.ephemeral_buckets, each.key)
+  }
+
+  dynamic "soft_delete_policy" {
+    for_each = contains(local.ephemeral_buckets, each.key) ? [true] : []
+    content {
+      retention_duration_seconds = 0
+    }
   }
 
   dynamic "lifecycle_rule" {

@@ -3,7 +3,7 @@ alfabetizacao_medallion:
   outputs:
     offline:
       type: duckdb
-      path: ':memory:'
+      path: "{{ env_var('DBT_DUCKDB_PATH', ':memory:') }}"
       threads: 1
     cloud:
       type: bigquery
@@ -13,3 +13,4 @@ alfabetizacao_medallion:
       location: "{{ env_var('DBT_LOCATION') }}"
       threads: 4
       priority: interactive
+      maximum_bytes_billed: "{{ env_var('DBT_MAXIMUM_BYTES_BILLED') | int }}"

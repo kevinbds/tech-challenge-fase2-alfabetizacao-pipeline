@@ -5,9 +5,14 @@ from pathlib import Path
 from typing import Annotated, override
 
 import typer
+from pydantic import ValidationError
 
 from alfabetizacao_pipeline.streaming.avro_codec import AvroContractError, AvroRecord, encode_event
-from alfabetizacao_pipeline.streaming.avro_types import DemoFixture
+from alfabetizacao_pipeline.streaming.avro_types import (
+    DemoFixture,
+    ReleaseContext,
+    accepted_records_for_release,
+)
 from alfabetizacao_pipeline.streaming.beam_job import run_direct
 from alfabetizacao_pipeline.streaming.envelope import MessageEnvelope
 from alfabetizacao_pipeline.streaming.processor import process_messages
@@ -41,14 +46,11 @@ class DemoReport:
     runner: str = "DirectRunner"
 
 
-def _load_fixture(path: Path) -> tuple[tuple[AvroRecord, ...], AvroRecord]:
+def _load_fixture(path: Path) -> DemoFixture:
     try:
-        decoded = DemoFixture.model_validate_json(path.read_text(encoding="utf-8"))
+        return DemoFixture.model_validate_json(path.read_text(encoding="utf-8"))
     except ValueError as error:
         raise FixtureShapeError(path=path) from error
-    return tuple(
-        record.as_avro_record() for record in decoded.accepted
-    ), decoded.schema_incompatible
 
 
 def _write_jsonl(path: Path, rows: tuple[AvroRecord, ...]) -> None:
@@ -56,23 +58,23 @@ def _write_jsonl(path: Path, rows: tuple[AvroRecord, ...]) -> None:
     _ = path.write_text(content, encoding="utf-8")
 
 
-def run_demo(fixture: Path, output: Path) -> DemoReport:
+def run_demo(fixture: Path, output: Path, release: ReleaseContext) -> DemoReport:
     """Executa a fixture pelo DirectRunner e grava saídas determinísticas."""
-    accepted, rejected = _load_fixture(fixture)
+    decoded = _load_fixture(fixture)
+    accepted = accepted_records_for_release(decoded, release)
     output.mkdir(parents=True, exist_ok=True)
-    base_time = datetime(2026, 8, 29, 12, tzinfo=UTC)
     envelopes = tuple(
         MessageEnvelope(
             message_id=f"message-{index:02d}",
             payload=encode_event(record),
-            publish_time=base_time + timedelta(seconds=index),
-            ingestion_time=base_time + timedelta(seconds=index, milliseconds=250),
+            publish_time=release.base_time + timedelta(seconds=index),
+            ingestion_time=release.base_time + timedelta(seconds=index, milliseconds=250),
         )
         for index, record in enumerate(accepted, start=1)
     )
     schema_rejected = 0
     try:
-        _ = encode_event(rejected)
+        _ = encode_event(decoded.schema_incompatible)
     except AvroContractError:
         schema_rejected = 1
 
@@ -109,13 +111,23 @@ def run_demo(fixture: Path, output: Path) -> DemoReport:
 def main(
     fixture: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
     output: Annotated[Path, typer.Option(file_okay=False)],
+    year: Annotated[int, typer.Option(min=2000, max=2100)],
     output_format: Annotated[str, typer.Option("--format")] = "json",
+    base_time: Annotated[str | None, typer.Option()] = None,
 ) -> None:
     """Executa o subapp local e imprime somente o relatório agregado."""
-    report = run_demo(fixture, output)
     if output_format != "json":
         msg = "somente --format json é suportado"
         raise typer.BadParameter(msg)
+    try:
+        release = ReleaseContext(
+            target_year=year,
+            base_time=datetime.fromisoformat(base_time) if base_time else datetime.now(UTC),
+        )
+    except (ValidationError, ValueError) as error:
+        message = "--base-time exige data/hora ISO 8601 em UTC"
+        raise typer.BadParameter(message) from error
+    report = run_demo(fixture, output, release)
     typer.echo(json.dumps(asdict(report), sort_keys=True))
 
 

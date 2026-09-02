@@ -3,11 +3,14 @@ locals {
     "artifactregistry.googleapis.com",
     "bigquery.googleapis.com",
     "bigqueryconnection.googleapis.com",
+    "bigquerystorage.googleapis.com",
     "billingbudgets.googleapis.com",
     "cloudbilling.googleapis.com",
     "cloudbuild.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "cloudscheduler.googleapis.com",
+    "containeranalysis.googleapis.com",
+    "compute.googleapis.com",
     "dataflow.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
@@ -19,6 +22,7 @@ locals {
     "storage.googleapis.com",
     "sts.googleapis.com",
     "workflows.googleapis.com",
+    "workflowexecutions.googleapis.com",
   ])
 
   deployer_project_roles = toset([
@@ -26,6 +30,7 @@ locals {
     "roles/bigquery.admin",
     "roles/cloudscheduler.admin",
     "roles/dataflow.admin",
+    "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.serviceAccountUser",
     "roles/logging.configWriter",
@@ -39,10 +44,13 @@ locals {
   ])
 
   ci_project_roles = toset([
+    "roles/serviceusage.serviceUsageConsumer",
+  ])
+
+  cloud_build_project_roles = toset([
     "roles/artifactregistry.writer",
-    "roles/cloudbuild.builds.editor",
     "roles/logging.logWriter",
-    "roles/storage.objectViewer",
+    "roles/serviceusage.serviceUsageConsumer",
   ])
 }
 
@@ -58,6 +66,8 @@ resource "google_project_service" "required" {
 data "google_bigquery_dataset" "source" {
   project    = var.source_project_id
   dataset_id = var.source_dataset_id
+
+  depends_on = [google_project_service.required["bigquery.googleapis.com"]]
 }
 
 check "source_location_matches" {
@@ -70,7 +80,7 @@ check "source_location_matches" {
 resource "google_storage_bucket" "terraform_state" {
   name                        = var.state_bucket_name
   project                     = var.project_id
-  location                    = var.source_dataset_location
+  location                    = var.region
   force_destroy               = !var.deletion_protection
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
@@ -97,7 +107,7 @@ resource "google_storage_bucket" "terraform_state" {
 resource "google_storage_bucket" "artifacts" {
   name                        = var.artifacts_bucket_name
   project                     = var.project_id
-  location                    = var.source_dataset_location
+  location                    = var.region
   force_destroy               = !var.deletion_protection
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
@@ -119,9 +129,43 @@ resource "google_storage_bucket_iam_member" "ci_artifact_creator" {
   member = "serviceAccount:${google_service_account.ci.email}"
 }
 
+resource "google_storage_bucket_iam_member" "ci_artifact_viewer" {
+  count = var.github_repository == null ? 0 : 1
+
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.ci.email}"
+}
+
+resource "google_storage_bucket_iam_member" "ci_artifact_bucket_viewer" {
+  count = var.github_repository == null ? 0 : 1
+
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.bucketViewer"
+  member = "serviceAccount:${google_service_account.ci.email}"
+}
+
+resource "google_storage_bucket_iam_member" "cloud_build_artifact_creator" {
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.cloud_build.email}"
+}
+
+resource "google_storage_bucket_iam_member" "cloud_build_artifact_viewer" {
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.cloud_build.email}"
+}
+
+resource "google_storage_bucket_iam_member" "cloud_build_artifact_bucket_viewer" {
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.bucketViewer"
+  member = "serviceAccount:${google_service_account.cloud_build.email}"
+}
+
 resource "google_artifact_registry_repository" "pipeline" {
   project       = var.project_id
-  location      = var.artifact_registry_location
+  location      = var.region
   repository_id = "alfabetizacao-pipeline"
   description   = "Imagens imutáveis do Tech Challenge FIAP Fase 2"
   format        = "DOCKER"
@@ -134,12 +178,24 @@ resource "google_service_account" "terraform_deployer" {
   project      = var.project_id
   account_id   = "terraform-deployer"
   display_name = "Terraform deployer da Fase 2"
+
+  depends_on = [google_project_service.required["iam.googleapis.com"]]
 }
 
 resource "google_service_account" "ci" {
   project      = var.project_id
   account_id   = "pipeline-ci"
   display_name = "CI sem chave estática"
+
+  depends_on = [google_project_service.required["iam.googleapis.com"]]
+}
+
+resource "google_service_account" "cloud_build" {
+  project      = var.project_id
+  account_id   = "pipeline-build"
+  display_name = "Cloud Build da Fase 2"
+
+  depends_on = [google_project_service.required["iam.googleapis.com"]]
 }
 
 resource "google_project_iam_member" "deployer" {
@@ -148,6 +204,8 @@ resource "google_project_iam_member" "deployer" {
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.terraform_deployer.email}"
+
+  depends_on = [google_project_service.required["cloudresourcemanager.googleapis.com"]]
 }
 
 resource "google_project_iam_member" "ci" {
@@ -156,6 +214,50 @@ resource "google_project_iam_member" "ci" {
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.ci.email}"
+
+  depends_on = [google_project_service.required["cloudresourcemanager.googleapis.com"]]
+}
+
+resource "google_project_iam_custom_role" "ci_cloud_build_submit" {
+  project     = var.project_id
+  role_id     = "pipelineCloudBuildSubmit"
+  title       = "Pipeline Cloud Build submit and read"
+  description = "Permite à identidade CI criar e observar builds sem update ou delete."
+  permissions = [
+    "cloudbuild.builds.create",
+    "cloudbuild.builds.get",
+    "cloudbuild.builds.list",
+  ]
+
+  depends_on = [
+    google_project_service.required["cloudresourcemanager.googleapis.com"],
+    google_project_service.required["iam.googleapis.com"],
+    google_project_service.required["cloudbuild.googleapis.com"],
+  ]
+}
+
+resource "google_project_iam_member" "ci_cloud_build_submit" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.ci_cloud_build_submit.name
+  member  = "serviceAccount:${google_service_account.ci.email}"
+}
+
+resource "google_project_iam_member" "cloud_build" {
+  for_each = local.cloud_build_project_roles
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.cloud_build.email}"
+
+  depends_on = [google_project_service.required["cloudresourcemanager.googleapis.com"]]
+}
+
+resource "google_service_account_iam_member" "ci_cloud_build_act_as" {
+  count = var.github_repository == null ? 0 : 1
+
+  service_account_id = google_service_account.cloud_build.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.ci.email}"
 }
 
 resource "google_billing_account_iam_member" "deployer_costs_manager" {
@@ -164,6 +266,8 @@ resource "google_billing_account_iam_member" "deployer_costs_manager" {
   billing_account_id = var.billing_account_id
   role               = "roles/billing.costsManager"
   member             = "serviceAccount:${google_service_account.terraform_deployer.email}"
+
+  depends_on = [google_project_service.required["cloudbilling.googleapis.com"]]
 }
 
 resource "google_iam_workload_identity_pool" "github" {
@@ -174,6 +278,13 @@ resource "google_iam_workload_identity_pool" "github" {
   display_name              = "GitHub Actions"
   description               = "Pool limitado ao repositório autorizado"
   disabled                  = false
+
+  depends_on = [
+    google_project_service.required["iam.googleapis.com"],
+    google_project_service.required["iamcredentials.googleapis.com"],
+    google_project_service.required["cloudresourcemanager.googleapis.com"],
+    google_project_service.required["sts.googleapis.com"],
+  ]
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
@@ -188,7 +299,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository" = "assertion.repository"
     "attribute.ref"        = "assertion.ref"
   }
-  attribute_condition = "assertion.repository == '${var.github_repository}'"
+  attribute_condition = "assertion.repository == '${var.github_repository}' && assertion.ref == '${var.github_ref}'"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"

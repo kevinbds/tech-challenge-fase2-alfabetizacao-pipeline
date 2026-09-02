@@ -9,4 +9,3 @@ do lote, preservando a história oficial.
 Alternativas rejeitadas: streaming para toda fonte oficial não tem justificativa
 nem garantia de disponibilidade; sobrescrever o Batch apagaria linhagem.
 Trade-off: consumidores precisam entender a diferença entre oficial e simulado.
-

@@ -89,8 +89,17 @@ class ContentFingerprint(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
-    row_count: Annotated[int, Field(ge=0)]
+    row_count: Annotated[int, Field(gt=0)]
     value: str
+
+
+class SnapshotExport(BaseModel):
+    """Objects and row count produced by one atomic snapshot job."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    row_count: Annotated[int, Field(gt=0)]
+    object_uris: Annotated[tuple[str, ...], Field(min_length=1)]
 
 
 class QueryParameter(BaseModel):
@@ -114,23 +123,45 @@ class BronzeObject(BaseModel):
     size_bytes: Annotated[int, Field(ge=0)]
 
 
+class ObjectVersion(BaseModel):
+    """Pinned generation and digest for one object already read."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    uri: str = Field(pattern=r"^gs://")
+    generation: Annotated[int, Field(gt=0)]
+    metageneration: Annotated[int, Field(gt=0)]
+    payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class VersionedPayload(BaseModel):
+    """Bytes downloaded with generation preconditions and their identity."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    version: ObjectVersion
+    payload: bytes
+
+
 class BatchManifest(BaseModel):
     """PII-free provenance record for one source partition run."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     run_id: str
+    attempt_id: str | None = None
     source: str
     year: Annotated[int, Field(ge=2000, le=2100)]
     status: BatchStatus
     source_identity: SourceIdentity
-    row_count: Annotated[int, Field(ge=0)]
+    row_count: Annotated[int, Field(gt=0)]
     fingerprint: str
     query_hash: str
     schema_hash: str
     bronze_objects: tuple[BronzeObject, ...]
     started_at: datetime
     completed_at: datetime | None
+    verified_at: datetime | None
     git_sha: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     image_digest: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -160,7 +191,7 @@ class BatchRequest(BaseModel):
 
 
 class BatchPlan(BaseModel):
-    """Machine-readable dry-run decision with no cloud writes."""
+    """Machine-readable execution planning decision with content identity."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
@@ -174,6 +205,21 @@ class BatchPlan(BaseModel):
     schema_hash: str
     fingerprint: str
     row_count: int
+    cloud_writes: int = 0
+
+
+class BatchEstimate(BaseModel):
+    """Machine-readable dry-run estimate without a content identity query."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    source: str
+    year: int
+    status: BatchStatus = BatchStatus.PLANNED
+    estimated_bytes: int
+    maximum_bytes_billed: int
+    query_hash: str
+    schema_hash: str
     cloud_writes: int = 0
 
 

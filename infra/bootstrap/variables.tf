@@ -11,7 +11,7 @@ variable "project_id" {
 variable "region" {
   description = "Região dos serviços regionais; não define a localização da fonte."
   type        = string
-  default     = "southamerica-east1"
+  default     = "us-central1"
 
   validation {
     condition     = can(regex("^[a-z]+-[a-z]+[0-9]$", var.region))
@@ -51,12 +51,6 @@ variable "artifacts_bucket_name" {
   type        = string
 }
 
-variable "artifact_registry_location" {
-  description = "Localização do Artifact Registry."
-  type        = string
-  default     = "us"
-}
-
 variable "github_repository" {
   description = "Repositório no formato owner/repo. Nulo não cria WIF nem concede acesso externo."
   type        = string
@@ -66,6 +60,17 @@ variable "github_repository" {
   validation {
     condition     = var.github_repository == null || can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
     error_message = "github_repository deve usar o formato owner/repo."
+  }
+}
+
+variable "github_ref" {
+  description = "Ref Git autorizada a usar a identidade CI."
+  type        = string
+  default     = "refs/heads/main"
+
+  validation {
+    condition     = can(regex("^refs/(heads|tags)/[A-Za-z0-9._/-]+$", var.github_ref))
+    error_message = "github_ref deve usar o formato refs/heads/nome ou refs/tags/nome."
   }
 }
 

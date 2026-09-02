@@ -28,10 +28,10 @@ class Release(BaseModel):
 
 
 class ActiveRelease(BaseModel):
-    """Singleton active and previous release pointers."""
+    """Singleton release pointer and its immediate lineage predecessor."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     singleton_key: bool = True
-    active_release_id: ReleaseId
-    previous_release_id: ReleaseId | None
+    release_id: ReleaseId
+    prior_release_id: ReleaseId | None

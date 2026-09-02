@@ -3,7 +3,11 @@
 .venv
 .env
 .env.*
-.omo
+gha-creds-*.json
+.terraform
+*.tfvars
+*.tfvars.json
+backend.hcl
 .pytest_cache
 .ruff_cache
 .basedpyright
@@ -11,8 +15,9 @@ __pycache__
 *.py[cod]
 .coverage
 htmlcov
+dbt/target
+dbt/logs
+dbt/.user.yml
 tests
 docs
 infra
-dbt
-contracts

@@ -1,13 +1,20 @@
 import json
+import os
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from enum import StrEnum, unique
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Protocol, assert_never
 
 import typer
+from pydantic import ValidationError
 
 from alfabetizacao_pipeline.streaming.avro_codec import AvroContractError, encode_event
-from alfabetizacao_pipeline.streaming.avro_types import DemoFixture
+from alfabetizacao_pipeline.streaming.avro_types import (
+    DemoFixture,
+    ReleaseContext,
+    accepted_records_for_release,
+)
 from alfabetizacao_pipeline.streaming.publisher import (
     GooglePublisherClient,
     GooglePubSubPublisher,
@@ -42,6 +49,18 @@ class ProducerReport:
     published: int
     schema_rejected: int
     mode: str
+    target_year: int
+    base_time: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProducerRequest:
+    """Entrada já validada para publicar uma release da fixture."""
+
+    mode: ProducerMode
+    topic: str
+    fixture_path: Path
+    release: ReleaseContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,28 +93,28 @@ def _publisher(mode: ProducerMode, policy: PublishPolicy) -> Publisher:
 
 
 def run_producer(
-    mode: ProducerMode,
-    topic: str,
-    fixture_path: Path,
+    request: ProducerRequest,
     policy: PublishPolicy,
-    correlation_id: str | None = None,
+    publisher: Publisher,
 ) -> ProducerReport:
     """Publica dez registros compatíveis e rejeita o incompatível antes da porta."""
-    fixture = DemoFixture.model_validate_json(fixture_path.read_text(encoding="utf-8"))
-    publisher = _publisher(mode, policy)
+    fixture = DemoFixture.model_validate_json(request.fixture_path.read_text(encoding="utf-8"))
     published = 0
-    for record in fixture.accepted:
-        avro_record = record.as_avro_record()
-        if correlation_id is not None:
-            avro_record["correlation_id"] = correlation_id
-        _ = publish_checked(publisher, topic, avro_record, policy)
+    for avro_record in accepted_records_for_release(fixture, request.release):
+        _ = publish_checked(publisher, request.topic, avro_record, policy)
         published += 1
     rejected = 0
     try:
         _ = encode_event(fixture.schema_incompatible)
     except AvroContractError:
         rejected = 1
-    return ProducerReport(published=published, schema_rejected=rejected, mode=mode)
+    return ProducerReport(
+        published=published,
+        schema_rejected=rejected,
+        mode=request.mode,
+        target_year=request.release.target_year,
+        base_time=request.release.base_time.isoformat().replace("+00:00", "Z"),
+    )
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -107,10 +126,26 @@ def main(
     topic: Annotated[str, typer.Option(envvar="PUBSUB_TOPIC")],
     fixture: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
     report: Annotated[Path, typer.Option(dir_okay=False)],
-    correlation_id: Annotated[str | None, typer.Option(envvar="CORRELATION_ID")] = None,
+    year: Annotated[int, typer.Option(min=2000, max=2100)],
 ) -> None:
     """Executa o producer em Pub/Sub real ou no modo local explicitamente pedido."""
-    result = run_producer(mode, topic, fixture, PublishPolicy(), correlation_id)
+    try:
+        release = ReleaseContext(
+            target_year=year,
+            base_time=datetime.now(UTC),
+            correlation_id=os.getenv("CORRELATION_ID"),
+        )
+    except ValidationError as error:
+        message = "CORRELATION_ID precisa ter entre 1 e 128 caracteres"
+        raise typer.BadParameter(message) from error
+    policy = PublishPolicy()
+    request = ProducerRequest(
+        mode=mode,
+        topic=topic,
+        fixture_path=fixture,
+        release=release,
+    )
+    result = run_producer(request, policy, _publisher(mode, policy))
     _ = report.write_text(json.dumps(asdict(result), sort_keys=True) + "\n", encoding="utf-8")
     typer.echo(f"published={result.published} schema_rejected={result.schema_rejected}")
 

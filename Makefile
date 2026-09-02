@@ -19,10 +19,10 @@ typecheck: ## Executa o basedpyright em modo all
 	uv run basedpyright
 
 test: ## Executa a suite completa com cobertura minima
-	ALFABETIZACAO_VERIFY_ENTRYPOINTS=1 uv run pytest --cov=alfabetizacao_pipeline --cov-report=term-missing --cov-fail-under=90
+	uv run pytest --cov=alfabetizacao_pipeline --cov-report=term-missing --cov-fail-under=90
 
 test-ops: ## Exercita FinOps e contratos operacionais
-	uv run pytest tests/ops --cov=alfabetizacao_pipeline.ops --cov-report=term-missing --cov-fail-under=90
+	uv run pytest tests/ops tests/ci/test_yaml_lint.py --cov=alfabetizacao_pipeline.ops --cov-report=term-missing --cov-fail-under=90
 
 test-ci: ## Valida CI, Cloud Build, containers e targets
 	uv run pytest tests/ci

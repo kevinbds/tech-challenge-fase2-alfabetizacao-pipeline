@@ -12,9 +12,10 @@ with scoped as (
         *,
         date(ano, 1, 1) as ano_particao
     from {{ ref('stg_municipio') }}
-    where release_id = '{{ var("release_id") }}'
-    {% if is_incremental() %}
-        and date(ano, 1, 1) in ({{ partitions_to_replace | default("date(ano, 1, 1)") }})
-    {% endif %}
+    where
+        release_id = '{{ var("release_id") }}'
+        {% if is_incremental() %}
+            and date(ano, 1, 1) in ({{ partitions_to_replace | default("date(ano, 1, 1)") }})
+        {% endif %}
 )
 {{ deduplicate('scoped', ['release_id', 'ano', 'id_municipio', 'rede'], payload) }}

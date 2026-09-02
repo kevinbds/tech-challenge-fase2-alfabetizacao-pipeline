@@ -5,14 +5,13 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ReferenceSchemaDescriptor(BaseModel):
-    """Content-addressed zero-row Parquet reference schema location."""
+    """Content-addressed local zero-row Parquet reference schema artifact."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     source: str
     schema_hash: str
     local_path: Path
-    reference_file_schema_uri: str
 
 
 class ReferenceSchemaInspection(BaseModel):

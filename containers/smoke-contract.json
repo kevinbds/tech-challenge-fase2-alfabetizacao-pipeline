@@ -1,14 +1,36 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "digest_required": true,
-  "image_unavailable_exit": 125,
-  "command_missing_exit": 127,
-  "success_exit": 0,
   "timeout_seconds": 60,
   "images": {
-    "batch": {"command": ["alfabetizacao", "batch", "run", "--help"]},
-    "dbt": {"command": ["dbt", "--version"]},
-    "producer": {"command": ["python", "-m", "alfabetizacao_pipeline.streaming.producer", "--help"]},
-    "dataflow": {"command": ["python", "containers/dataflow/beam_entrypoint.py", "--help"]}
+    "batch": {
+      "entrypoint": ["alfabetizacao", "batch", "run"],
+      "checks": [{"name": "help", "arguments": ["--help"], "expected_exit": 0}]
+    },
+    "dbt": {
+      "entrypoint": ["dbt"],
+      "checks": [
+        {"name": "version", "arguments": ["--version"], "expected_exit": 0},
+        {"name": "parse_offline", "arguments": ["parse", "--project-dir", "dbt", "--profiles-dir", "dbt", "--target", "offline"], "expected_exit": 0}
+      ]
+    },
+    "producer": {
+      "entrypoint": ["python", "-m", "alfabetizacao_pipeline.streaming.producer"],
+      "checks": [{"name": "help", "arguments": ["--help"], "expected_exit": 0}]
+    },
+    "dataflow_template": {
+      "entrypoint": ["/opt/google/dataflow/python_template_launcher"],
+      "checks": [
+        {"name": "launcher_help", "arguments": ["--help"], "expected_exit": 0},
+        {"name": "python_runtime", "docker_entrypoint": "python", "arguments": ["-c", "import apache_beam; import beam_entrypoint; assert apache_beam.__version__ == '2.75.0'"], "expected_exit": 0}
+      ]
+    },
+    "dataflow_sdk": {
+      "entrypoint": ["/opt/apache/beam/boot"],
+      "checks": [
+        {"name": "boot_help", "arguments": ["--help"], "expected_exit": 0},
+        {"name": "python_runtime", "docker_entrypoint": "python", "arguments": ["-c", "import apache_beam; import beam_entrypoint; assert apache_beam.__version__ == '2.75.0'"], "expected_exit": 0}
+      ]
+    }
   }
 }

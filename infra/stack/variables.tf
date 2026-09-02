@@ -28,9 +28,20 @@ variable "data_location" {
   }
 }
 
+variable "storage_location" {
+  type        = string
+  default     = "us-central1"
+  description = "Região dos buckets operacionais, compatível com o multi-region US do BigQuery."
+
+  validation {
+    condition     = can(regex("^[a-z]+-[a-z]+[0-9]$", var.storage_location))
+    error_message = "storage_location deve ser uma região GCP válida."
+  }
+}
+
 variable "region" {
   type        = string
-  default     = "southamerica-east1"
+  default     = "us-central1"
   description = "Região de Cloud Run, Scheduler, Workflows e Dataflow."
 
   validation {
@@ -55,64 +66,25 @@ variable "artifacts_bucket_name" {
   description = "Bucket criado pelo bootstrap."
 }
 
+variable "gold_consumer_principals" {
+  type        = set(string)
+  default     = []
+  description = "Principais humanos ou de serviço autorizados a consultar somente o dataset Gold."
+
+  validation {
+    condition = alltrue([
+      for member in var.gold_consumer_principals :
+      can(regex("^(user|group|serviceAccount):[^@\\s]+@[^@\\s]+$", member))
+    ])
+    error_message = "Use members IAM explícitos nos formatos user:, group: ou serviceAccount:."
+  }
+}
+
 variable "terraform_deployer_email" {
   type        = string
   default     = null
   nullable    = true
   description = "Conta do bootstrap; nula não cria concessões de deploy."
-}
-
-variable "ci_service_account_email" {
-  type        = string
-  default     = null
-  nullable    = true
-  description = "Conta CI do bootstrap; nula não cria concessões adicionais."
-}
-
-variable "batch_image" {
-  type        = string
-  description = "Imagem Batch imutável por digest."
-  validation {
-    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.batch_image))
-    error_message = "batch_image deve terminar com @sha256:<64 hex>."
-  }
-}
-
-variable "dbt_image" {
-  type        = string
-  description = "Imagem dbt imutável por digest."
-  validation {
-    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.dbt_image))
-    error_message = "dbt_image deve terminar com @sha256:<64 hex>."
-  }
-}
-
-variable "producer_image" {
-  type        = string
-  description = "Imagem producer imutável por digest."
-  validation {
-    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.producer_image))
-    error_message = "producer_image deve terminar com @sha256:<64 hex>."
-  }
-}
-
-variable "dataflow_image" {
-  type        = string
-  description = "Imagem do SDK Beam/Flex Template imutável por digest."
-  validation {
-    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.dataflow_image))
-    error_message = "dataflow_image deve terminar com @sha256:<64 hex>."
-  }
-}
-
-variable "release_git_sha" {
-  type        = string
-  description = "SHA Git exato do código empacotado nas imagens da release."
-
-  validation {
-    condition     = can(regex("^[0-9a-f]{40}$", var.release_git_sha))
-    error_message = "release_git_sha deve conter exatamente 40 caracteres hexadecimais minúsculos."
-  }
 }
 
 variable "reference_schema_uris" {
@@ -129,101 +101,11 @@ variable "reference_schema_uris" {
         "municipio",
         "alunos",
       ] : contains(keys(var.reference_schema_uris), source)
-    ]) && alltrue([for uri in values(var.reference_schema_uris) : can(regex("^gs://.+/reference/.+\\.parquet$", uri))])
-    error_message = "Informe exatamente as seis URIs gs://.../reference/...parquet."
-  }
-}
-
-variable "scheduler_enabled" {
-  type        = bool
-  default     = false
-  description = "Opt-in explícito para despausar o lote mensal."
-}
-
-variable "runtime_entrypoints_verified" {
-  type        = bool
-  default     = false
-  description = "Gate da integração: só libera plano/aplicação depois de validar os entrypoints Batch e Producer no SHA integrado."
-}
-
-variable "batch_command" {
-  type        = list(string)
-  default     = ["alfabetizacao"]
-  description = "Executável do container Batch validado no SHA integrado."
-}
-
-variable "batch_args" {
-  type        = list(string)
-  default     = ["batch", "run", "--source", "municipio", "--year", "2024", "--dry-run", "--format", "json"]
-  description = "Invocação segura e completa; o Workflow mensal sobrescreve fonte, ano e modo."
-}
-
-variable "producer_command" {
-  type        = list(string)
-  default     = ["python", "-m", "alfabetizacao_pipeline.streaming.producer"]
-  description = "Executável standalone do Producer validado no SHA integrado."
-}
-
-variable "producer_args" {
-  type        = list(string)
-  default     = ["--mode", "pubsub", "--fixture", "/app/contracts/events/fixtures/demo.json", "--report", "/tmp/producer-report.json"]
-  description = "Argumentos estáticos do Producer; tópico e correlação entram pelo ambiente."
-}
-
-variable "maximum_bytes_billed" {
-  type        = number
-  default     = 26843545600
-  description = "Cap de 25 GiB propagado aos jobs."
-
-  validation {
-    condition     = var.maximum_bytes_billed > 0 && var.maximum_bytes_billed <= 26843545600
-    error_message = "O cap não pode exceder 25 GiB sem mudança deliberada de código."
-  }
-}
-
-variable "budget_currency" {
-  type        = string
-  default     = null
-  nullable    = true
-  description = "Moeda ISO; BRL habilita default 50. Outra moeda exige amount explícito."
-
-  validation {
-    condition     = var.budget_currency == null || can(regex("^[A-Z]{3}$", var.budget_currency))
-    error_message = "budget_currency deve ser ISO 4217 em maiúsculas."
-  }
-}
-
-variable "budget_amount" {
-  type        = number
-  default     = null
-  nullable    = true
-  description = "Valor do alerta; não é hard cap."
-
-  validation {
-    condition     = var.budget_amount == null || var.budget_amount > 0
-    error_message = "budget_amount deve ser positivo."
-  }
-}
-
-variable "deletion_protection" {
-  type        = bool
-  default     = true
-  description = "Proteção explícita de dados e runtime; desative em apply separado antes do destroy autorizado."
-}
-
-variable "alert_email" {
-  type        = string
-  default     = null
-  nullable    = true
-  description = "E-mail opcional do canal de alertas."
-}
-
-variable "labels" {
-  type        = map(string)
-  description = "Rótulos FinOps comuns."
-  default = {
-    challenge   = "fiap-fase2"
-    environment = "academic"
-    managed_by  = "terraform"
+      ]) && alltrue([
+      for uri in values(var.reference_schema_uris) :
+      startswith(uri, "gs://${var.artifacts_bucket_name}/reference/") &&
+      can(regex("\\.parquet$", uri))
+    ])
+    error_message = "Informe exatamente seis Parquet no prefixo reference/ do bucket de artefatos do bootstrap."
   }
 }

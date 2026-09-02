@@ -9,4 +9,3 @@ combinação reduz cópia e administração de servidores.
 Alternativas rejeitadas: AWS/Azure exigiriam transportar a fonte antes de
 analisar; VMs/Kubernetes aumentariam operação de um challenge com jobs finitos.
 Trade-off: a validação final depende de billing, IAM e quotas GCP.
-

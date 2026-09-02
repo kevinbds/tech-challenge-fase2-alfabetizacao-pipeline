@@ -1,0 +1,36 @@
+{
+  "id": "build-123",
+  "status": "SUCCESS",
+  "substitutions": {
+    "COMMIT_SHA": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "results": {
+    "images": [
+      {
+        "name": "southamerica-east1-docker.pkg.dev/fiap-fase2/alfabetizacao-pipeline/batch:0123456789abcdef0123456789abcdef01234567",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pushTiming": {"startTime": "2026-01-01T00:00:00Z"}
+      },
+      {
+        "name": "southamerica-east1-docker.pkg.dev/fiap-fase2/alfabetizacao-pipeline/dbt:0123456789abcdef0123456789abcdef01234567",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "pushTiming": {"startTime": "2026-01-01T00:00:00Z"}
+      },
+      {
+        "name": "southamerica-east1-docker.pkg.dev/fiap-fase2/alfabetizacao-pipeline/producer:0123456789abcdef0123456789abcdef01234567",
+        "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "pushTiming": {"startTime": "2026-01-01T00:00:00Z"}
+      },
+      {
+        "name": "southamerica-east1-docker.pkg.dev/fiap-fase2/alfabetizacao-pipeline/dataflow-template:0123456789abcdef0123456789abcdef01234567",
+        "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "pushTiming": {"startTime": "2026-01-01T00:00:00Z"}
+      },
+      {
+        "name": "southamerica-east1-docker.pkg.dev/fiap-fase2/alfabetizacao-pipeline/dataflow-sdk:0123456789abcdef0123456789abcdef01234567",
+        "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "pushTiming": {"startTime": "2026-01-01T00:00:00Z"}
+      }
+    ]
+  }
+}

@@ -1,18 +1,18 @@
-from dataclasses import dataclass
-from typing import Protocol, override
+from typing import override
 from urllib.parse import urlsplit
 
 from google.api_core.exceptions import (
     InternalServerError,
+    NotFound,
     PreconditionFailed,
     ServiceUnavailable,
     TooManyRequests,
 )
-from google.cloud import storage
 
 from alfabetizacao_pipeline.batch.adapters import (
     GcsObjectVersion,
     GcsSdkBoundary,
+    ImmutableCopy,
     ImmutableDownload,
     ImmutableUpload,
 )
@@ -21,116 +21,14 @@ from alfabetizacao_pipeline.batch.errors import (
     StaleObjectGenerationError,
 )
 from alfabetizacao_pipeline.batch.google_adapters import RetryObserver, retry_call
+from alfabetizacao_pipeline.batch.google_storage_native import (
+    NativeStorageClient,
+    StorageClientBoundary,
+    StorageCopyRequest,
+)
 from alfabetizacao_pipeline.batch.models import BronzeObject
 
 RETRYABLE_STORAGE_ERRORS = (ServiceUnavailable, TooManyRequests, InternalServerError)
-
-
-@dataclass(frozen=True, slots=True)
-class StoredBlob:
-    """Normalized immutable GCS object metadata."""
-
-    generation: int
-    crc32c: str
-    size: int
-
-
-@dataclass(frozen=True, slots=True)
-class StoredVersion:
-    """Storage metadata required for a preconditioned read."""
-
-    name: str
-    generation: int
-    metageneration: int
-
-
-class StorageClientBoundary(Protocol):
-    """Narrow testable facade around google-cloud-storage."""
-
-    def stat(self, bucket: str, name: str) -> StoredVersion:
-        """Read the current immutable version metadata."""
-        ...
-
-    def download(
-        self,
-        bucket: str,
-        name: str,
-        generation: int,
-        metageneration: int,
-    ) -> bytes:
-        """Read one named object."""
-        ...
-
-    def upload_immutable(self, bucket: str, name: str, payload: bytes) -> StoredBlob:
-        """Create one object with generation-match zero."""
-        ...
-
-    def list_versions(self, bucket: str, prefix: str) -> tuple[StoredVersion, ...]:
-        """List stable object names in lexical order."""
-        ...
-
-
-class NativeStorageClient:
-    """Concrete google-cloud-storage facade."""
-
-    def __init__(self, project: str) -> None:
-        """Create an authenticated destination-project client."""
-        self._client: storage.Client = storage.Client(project=project)
-
-    def stat(self, bucket: str, name: str) -> StoredVersion:
-        """Reload current metadata before selecting an immutable version."""
-        blob = self._client.bucket(bucket).blob(name)
-        blob.reload()
-        return _stored_version(bucket, blob)
-
-    def download(
-        self,
-        bucket: str,
-        name: str,
-        generation: int,
-        metageneration: int,
-    ) -> bytes:
-        """Download bytes with the SDK checksum verification enabled."""
-        return (
-            self._client.bucket(bucket)
-            .blob(name, generation=generation)
-            .download_as_bytes(
-                checksum="crc32c",
-                if_generation_match=generation,
-                if_metageneration_match=metageneration,
-            )
-        )
-
-    def upload_immutable(self, bucket: str, name: str, payload: bytes) -> StoredBlob:
-        """Upload with a zero-generation precondition and CRC32C verification."""
-        blob = self._client.bucket(bucket).blob(name)
-        blob.upload_from_string(
-            payload,
-            if_generation_match=0,
-            checksum="crc32c",
-            retry=None,
-        )
-        blob.reload()
-        if blob.generation is None or blob.crc32c is None or blob.size is None:
-            message = f"missing-object-metadata:{bucket}/{name}"
-            raise ValueError(message)
-        return StoredBlob(
-            generation=int(blob.generation),
-            crc32c=blob.crc32c,
-            size=int(blob.size),
-        )
-
-    def list_versions(self, bucket: str, prefix: str) -> tuple[StoredVersion, ...]:
-        """List object names without relying on a fixed location."""
-        return tuple(
-            sorted(
-                (
-                    _stored_version(bucket, blob)
-                    for blob in self._client.list_blobs(bucket, prefix=prefix)
-                ),
-                key=lambda version: version.name,
-            )
-        )
 
 
 class GoogleGcsSdk(GcsSdkBoundary):
@@ -204,6 +102,41 @@ class GoogleGcsSdk(GcsSdkBoundary):
         )
 
     @override
+    def copy(self, request: ImmutableCopy) -> BronzeObject:
+        """Copy server-side and classify source staleness separately from conflicts."""
+        source_bucket, source_name = _split_gs_uri(request.source.uri)
+        destination_bucket, destination_name = _split_gs_uri(request.destination_uri)
+        copy_request = StorageCopyRequest(
+            source_bucket=source_bucket,
+            source_name=source_name,
+            source_generation=request.source.generation,
+            destination_bucket=destination_bucket,
+            destination_name=destination_name,
+        )
+        try:
+            blob = retry_call(
+                "gcs.copy",
+                lambda: self._client.copy_immutable(copy_request),
+                retryable=RETRYABLE_STORAGE_ERRORS,
+                maximum_attempts=self._maximum_attempts,
+                observer=self._observer,
+            )
+        except PreconditionFailed as error:
+            try:
+                current = self.stat(request.source.uri)
+            except NotFound as missing:
+                raise StaleObjectGenerationError(uri=request.source.uri) from missing
+            if current.generation != request.source.generation:
+                raise StaleObjectGenerationError(uri=request.source.uri) from error
+            raise ImmutableObjectExistsError(uri=request.destination_uri) from error
+        return BronzeObject(
+            uri=request.destination_uri,
+            generation=blob.generation,
+            crc32c=blob.crc32c,
+            size_bytes=blob.size,
+        )
+
+    @override
     def list(self, prefix: str) -> tuple[GcsObjectVersion, ...]:
         """List exact gs:// URIs under a prefix using bounded retries."""
         bucket, name_prefix = _split_gs_uri(prefix)
@@ -222,13 +155,6 @@ class GoogleGcsSdk(GcsSdkBoundary):
             )
             for version in versions
         )
-
-
-def _stored_version(bucket: str, blob: storage.Blob) -> StoredVersion:
-    if blob.generation is None or blob.metageneration is None:
-        message = f"missing-object-version:{bucket}/{blob.name}"
-        raise ValueError(message)
-    return StoredVersion(blob.name, int(blob.generation), int(blob.metageneration))
 
 
 def _split_gs_uri(uri: str) -> tuple[str, str]:

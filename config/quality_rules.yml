@@ -1,5 +1,7 @@
 version: 1
 catalog: alfabetizacao_release_quality
+status: documentary_catalog
+executable_source: dbt/models/quality/release_metrics.sql
 defaults:
   pass_action: promote
   warning_action: continue_with_alert
@@ -21,11 +23,46 @@ rules:
     action: quarantine_and_block
   - id: relationships
     scope: silver
-    metric: matched_parent_rate
+    metric: matched_reference_rate
     pass: "= 100%"
     warning: never
     critical: "< 100%"
-    student_parent: [ano, id_municipio, rede]
+    relations:
+      alunos_diretorio_municipio:
+        source: silver_alunos
+        target: diretorios.municipio
+        keys: [id_municipio]
+        domain: {release_id: source}
+      municipio_diretorio:
+        source: silver_municipio
+        target: diretorios.municipio
+        keys: [id_municipio]
+        domain: {release_id: source}
+      uf_diretorio:
+        source: silver_uf
+        target: diretorios.municipio
+        keys: [sigla_uf]
+        domain: {release_id: source}
+      meta_municipio_diretorio:
+        source: silver_meta_alfabetizacao_municipio
+        target: diretorios.municipio
+        keys: [id_municipio]
+        domain: {release_id: source}
+      meta_uf_diretorio:
+        source: silver_meta_alfabetizacao_uf
+        target: diretorios.municipio
+        keys: [sigla_uf]
+        domain: {release_id: source}
+      meta_municipio_resultado:
+        source: silver_meta_alfabetizacao_municipio
+        target: silver_municipio
+        keys: [release_id, ano, id_municipio, rede]
+        domain: {release_id: source, rede: municipal}
+      resultado_uf_meta:
+        source: silver_uf
+        target: silver_meta_alfabetizacao_uf
+        keys: [release_id, ano, sigla_uf, rede]
+        domain: {release_id: source, rede: publica}
     release_scoped: true
     action: quarantine_and_block
   - id: gold_core_nulls
@@ -73,8 +110,8 @@ rules:
     warning_action: continue_with_alert
     critical_action: quarantine_and_block
   - id: partition_volume
-    scope: partition
-    metric: drop_percent
+    scope: release
+    metric: absolute_volume_delta_percent
     pass: "<= 20"
     warning: "> 20 and <= 50"
     critical: "row_count = 0 or drop_percent > 50"
@@ -89,15 +126,15 @@ rules:
     action: block_promotion
   - id: identical_duplicate
     scope: silver
-    metric: copies
-    pass: "= 1"
-    warning: "> 1 with one payload hash"
+    metric: excess_copies
+    pass: "= 0"
+    warning: "> 0 with one payload hash"
     critical: never
     action: deduplicate_and_alert
   - id: conflicting_duplicate
     scope: silver
-    metric: payload_variants
-    pass: "= 1"
+    metric: conflicting_business_keys
+    pass: "= 0"
     warning: never
-    critical: "> 1"
+    critical: "> 0"
     action: quarantine_and_block

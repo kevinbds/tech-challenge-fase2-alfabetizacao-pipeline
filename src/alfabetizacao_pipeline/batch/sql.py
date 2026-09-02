@@ -24,25 +24,6 @@ def build_select_sql(
     )
 
 
-def build_fingerprint_sql(
-    contract: SourceContract,
-    project: str,
-    dataset: str,
-    year: int,
-) -> str:
-    """Build the canonical row-count and BIT_XOR content fingerprint query."""
-    del year
-    columns = ", ".join(column.name for column in contract.columns)
-    return (
-        "SELECT\n"
-        "  COUNT(*) AS row_count,\n"
-        "  BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(STRUCT("
-        f"{columns})))) AS content_fingerprint\n"
-        f"FROM {qualified_table(project, dataset, contract.name)}\n"
-        "WHERE ano = @year"
-    )
-
-
 def build_export_sql(select_sql: str, landing_uri: str) -> str:
     """Wrap a select in a non-overwriting Snappy Parquet export."""
     return (

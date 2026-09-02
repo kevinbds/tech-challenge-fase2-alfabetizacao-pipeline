@@ -8,5 +8,4 @@ o restante da plataforma.
 
 Alternativas rejeitadas: backend manual quebra reprodutibilidade; state local
 permanente impede colaboração e recuperação. Trade-off: há uma etapa de migração
-que deve ser revisada e autorizada pela equipe.
-
+que precisa de revisão e autorização antes da execução.

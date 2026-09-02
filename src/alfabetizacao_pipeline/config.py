@@ -38,7 +38,7 @@ class AppSettings(BaseSettings):
     )
 
     gcp_project_id: GcpProjectIdInput = "local-project"
-    gcp_region: GcpRegionInput = "southamerica-east1"
+    gcp_region: GcpRegionInput = "us-central1"
     bigquery_location: str = Field(default="US", min_length=1)
     source_project_id: str = Field(default="basedosdados", min_length=1)
     source_dataset_id: str = Field(

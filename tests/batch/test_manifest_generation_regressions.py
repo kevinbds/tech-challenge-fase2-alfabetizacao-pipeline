@@ -5,6 +5,7 @@ from google.api_core.exceptions import PreconditionFailed
 
 from alfabetizacao_pipeline.batch.adapters import (
     GcsObjectVersion,
+    ImmutableCopy,
     ImmutableDownload,
     ImmutableUpload,
 )
@@ -13,8 +14,9 @@ from alfabetizacao_pipeline.batch.errors import (
     StaleObjectGenerationError,
 )
 from alfabetizacao_pipeline.batch.fakes import ManifestFixtureSpec, manifest_fixture
-from alfabetizacao_pipeline.batch.google_storage import (
-    GoogleGcsSdk,
+from alfabetizacao_pipeline.batch.google_storage import GoogleGcsSdk
+from alfabetizacao_pipeline.batch.google_storage_native import (
+    StorageCopyRequest,
     StoredBlob,
     StoredVersion,
 )
@@ -60,6 +62,9 @@ class RacingManifestSdk:
         del request
         raise ImmutableObjectExistsError(uri=self.uri)
 
+    def copy(self, request: ImmutableCopy) -> BronzeObject:
+        raise ImmutableObjectExistsError(uri=request.destination_uri)
+
     def list(self, prefix: str) -> tuple[GcsObjectVersion, ...]:
         del prefix
         return (self.stat(self.uri),)
@@ -85,23 +90,24 @@ class StaleStorageClient:
         del bucket, name, payload
         raise AssertionError
 
+    def copy_immutable(self, request: StorageCopyRequest) -> StoredBlob:
+        del request
+        raise AssertionError
+
     def list_versions(self, bucket: str, prefix: str) -> tuple[StoredVersion, ...]:
         del bucket, prefix
         return ()
 
 
 def test_manifest_selection_fails_when_generation_changes_after_listing() -> None:
-    # Given: a listed manifest whose generation changes before download
     sdk = RacingManifestSdk()
     sdk.race_on_download = True
     store = GcsManifestStore("gs://control/manifests", sdk)
-    # When/Then: the generation precondition fails instead of reading stale state
     with pytest.raises(StaleObjectGenerationError):
         _ = store.latest_completed("uf", 2024)
 
 
 def test_manifest_conflict_reread_is_pinned_to_observed_generation() -> None:
-    # Given: generation-zero upload conflict followed by another concurrent generation
     sdk = RacingManifestSdk()
     sdk.race_on_download = True
     store = GcsManifestStore("gs://control/manifests", sdk)
@@ -114,15 +120,12 @@ def test_manifest_conflict_reread_is_pinned_to_observed_generation() -> None:
             datetime(2025, 1, 1, tzinfo=UTC),
         )
     )
-    # When/Then: idempotency comparison never reads an unpinned latest object
     with pytest.raises(StaleObjectGenerationError):
         store.persist(manifest)
 
 
 def test_google_adapter_maps_generation_precondition_failure() -> None:
-    # Given: metadata selected before the object changes in GCS
     sdk = GoogleGcsSdk("project", client=StaleStorageClient())
     version = sdk.stat("gs://control/manifest.json")
-    # When/Then: the SDK precondition becomes the typed stale-state error
     with pytest.raises(StaleObjectGenerationError):
         _ = sdk.download(ImmutableDownload(version))

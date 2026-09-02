@@ -1,0 +1,186 @@
+version: 2
+
+unit_tests:
+  - name: resultado_municipio_converte_codigos_de_rede
+    model: stg_municipio
+    given:
+      - input: source('bronze', 'municipio')
+        format: sql
+        rows: |
+          select 2024 ano, '3550308' id_municipio, '2' serie, '0' rede,
+                 70 taxa_alfabetizacao, null media_portugues,
+                 null proporcao_aluno_nivel_0, null proporcao_aluno_nivel_1,
+                 null proporcao_aluno_nivel_2, null proporcao_aluno_nivel_3,
+                 null proporcao_aluno_nivel_4, null proporcao_aluno_nivel_5,
+                 null proporcao_aluno_nivel_6, null proporcao_aluno_nivel_7,
+                 null proporcao_aluno_nivel_8, 'municipio.parquet' _file_name
+          union all select 2024, '3550308', '2', '2', 70, null,
+                 null, null, null, null, null, null, null, null, null,
+                 'municipio.parquet'
+          union all select 2024, '3550308', '2', '3', 70, null,
+                 null, null, null, null, null, null, null, null, null,
+                 'municipio.parquet'
+          union all select 2024, '3550308', '2', '5', 70, null,
+                 null, null, null, null, null, null, null, null, null,
+                 'municipio.parquet'
+          union all select 2024, '3550309', '2', '2', 70, null,
+                 null, null, null, null, null, null, null, null, null,
+                 'municipio-not-selected.parquet'
+          union all select 2024, '3550310', '2', '3', 70, null,
+                 null, null, null, null, null, null, null, null, null,
+                 'municipio-other-release.parquet'
+      - input: source('ops', 'release_files')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'municipio' table_name,
+                 'municipio.parquet' file_uri, 'selected' status,
+                 'run-municipio' source_run_id,
+                 timestamp '2025-01-15 09:00:00' ingested_at
+          union all select 'local-release', 'municipio',
+                 'municipio-not-selected.parquet', 'discarded',
+                 'run-municipio-discarded', timestamp '2025-01-15 09:00:00'
+          union all select 'previous-release', 'municipio',
+                 'municipio-other-release.parquet', 'selected',
+                 'run-municipio-previous', timestamp '2025-01-15 09:00:00'
+    expect:
+      rows:
+        - {ano: 2024, id_municipio: '3550308', rede: total}
+        - {ano: 2024, id_municipio: '3550308', rede: estadual}
+        - {ano: 2024, id_municipio: '3550308', rede: municipal}
+        - {ano: 2024, id_municipio: '3550308', rede: publica}
+
+  - name: resultado_uf_converte_codigos_de_rede
+    model: stg_uf
+    given:
+      - input: source('bronze', 'uf')
+        format: sql
+        rows: |
+          select 2024 ano, 'SP' sigla_uf, '2' serie, '0' rede,
+                 70 taxa_alfabetizacao, null media_portugues,
+                 null proporcao_aluno_nivel_0, null proporcao_aluno_nivel_1,
+                 null proporcao_aluno_nivel_2, null proporcao_aluno_nivel_3,
+                 null proporcao_aluno_nivel_4, null proporcao_aluno_nivel_5,
+                 null proporcao_aluno_nivel_6, null proporcao_aluno_nivel_7,
+                 null proporcao_aluno_nivel_8, 'uf.parquet' _file_name
+          union all select 2024, 'SP', '2', '2', 70, null,
+                 null, null, null, null, null, null, null, null, null,
+                 'uf.parquet'
+          union all select 2024, 'SP', '2', '3', 70, null,
+                 null, null, null, null, null, null, null, null, null,
+                 'uf.parquet'
+          union all select 2024, 'SP', '2', '5', 70, null,
+                 null, null, null, null, null, null, null, null, null,
+                 'uf.parquet'
+      - input: source('ops', 'release_files')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'uf' table_name, 'uf.parquet' file_uri,
+                 'selected' status, 'run-uf' source_run_id,
+                 timestamp '2025-01-15 09:00:00' ingested_at
+    expect:
+      rows:
+        - {ano: 2024, sigla_uf: SP, rede: total}
+        - {ano: 2024, sigla_uf: SP, rede: estadual}
+        - {ano: 2024, sigla_uf: SP, rede: municipal}
+        - {ano: 2024, sigla_uf: SP, rede: publica}
+
+  - name: alunos_converte_dependencia_administrativa
+    model: stg_alunos
+    given:
+      - input: source('bronze_restricted', 'alunos')
+        format: sql
+        rows: |
+          select 2024 ano, '3550308' id_municipio, 'escola' id_escola,
+                 'aluno-1' id_aluno, '1' caderno, '2' serie, '1' rede,
+                 'presente' presenca, 'preenchido' preenchimento_caderno,
+                 'sim' alfabetizado, 700 proficiencia, 1 peso_aluno,
+                 'alunos.parquet' _file_name
+          union all select 2024, '3550308', 'escola', 'aluno-2', '1', '2', '2',
+                 'presente', 'preenchido', 'sim', 700, 1, 'alunos.parquet'
+          union all select 2024, '3550308', 'escola', 'aluno-3', '1', '2', '3',
+                 'presente', 'preenchido', 'sim', 700, 1, 'alunos.parquet'
+          union all select 2024, '3550308', 'escola', 'aluno-4', '1', '2', '4',
+                 'presente', 'preenchido', 'sim', 700, 1, 'alunos.parquet'
+      - input: source('ops', 'release_files')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'alunos' table_name,
+                 'alunos.parquet' file_uri, 'selected' status,
+                 'run-alunos' source_run_id,
+                 timestamp '2025-01-15 09:00:00' ingested_at
+    expect:
+      rows:
+        - {id_aluno: aluno-1, rede: federal}
+        - {id_aluno: aluno-2, rede: estadual}
+        - {id_aluno: aluno-3, rede: municipal}
+        - {id_aluno: aluno-4, rede: privada}
+
+  - name: meta_municipio_normaliza_rede_textual
+    model: stg_meta_alfabetizacao_municipio
+    given:
+      - input: source('bronze', 'meta_alfabetizacao_municipio')
+        format: sql
+        rows: |
+          select 2024 ano, '3550308' id_municipio, ' MUNICIPAL ' rede,
+                 70 taxa_alfabetizacao, 71 meta_alfabetizacao_2024,
+                 null meta_alfabetizacao_2025, null meta_alfabetizacao_2026,
+                 null meta_alfabetizacao_2027, null meta_alfabetizacao_2028,
+                 null meta_alfabetizacao_2029, null meta_alfabetizacao_2030,
+                 4 nivel_alfabetizacao, 90 percentual_participacao,
+                 'meta-municipio.parquet' _file_name
+      - input: source('ops', 'release_files')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'meta_alfabetizacao_municipio' table_name,
+                 'meta-municipio.parquet' file_uri, 'selected' status,
+                 'run-meta-municipio' source_run_id,
+                 timestamp '2025-01-15 09:00:00' ingested_at
+    expect:
+      rows:
+        - {ano: 2024, id_municipio: '3550308', rede: municipal}
+
+  - name: meta_uf_remove_acento_de_rede_publica
+    model: stg_meta_alfabetizacao_uf
+    given:
+      - input: source('bronze', 'meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select 2024 ano, 'SP' sigla_uf, ' PÚBLICA ' rede,
+                 70 taxa_alfabetizacao, 71 meta_alfabetizacao_2024,
+                 null meta_alfabetizacao_2025, null meta_alfabetizacao_2026,
+                 null meta_alfabetizacao_2027, null meta_alfabetizacao_2028,
+                 null meta_alfabetizacao_2029, null meta_alfabetizacao_2030,
+                 90 percentual_participacao, 'meta-uf.parquet' _file_name
+      - input: source('ops', 'release_files')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'meta_alfabetizacao_uf' table_name,
+                 'meta-uf.parquet' file_uri, 'selected' status,
+                 'run-meta-uf' source_run_id,
+                 timestamp '2025-01-15 09:00:00' ingested_at
+    expect:
+      rows:
+        - {ano: 2024, sigla_uf: SP, rede: publica}
+
+  - name: meta_brasil_remove_acento_de_rede_publica
+    model: stg_meta_alfabetizacao_brasil
+    given:
+      - input: source('bronze', 'meta_alfabetizacao_brasil')
+        format: sql
+        rows: |
+          select 2024 ano, 'Pública' rede, 70 taxa_alfabetizacao,
+                 71 meta_alfabetizacao_2024, null meta_alfabetizacao_2025,
+                 null meta_alfabetizacao_2026, null meta_alfabetizacao_2027,
+                 null meta_alfabetizacao_2028, null meta_alfabetizacao_2029,
+                 null meta_alfabetizacao_2030, 90 percentual_participacao,
+                 'meta-brasil.parquet' _file_name
+      - input: source('ops', 'release_files')
+        format: sql
+        rows: |
+          select 'local-release' release_id, 'meta_alfabetizacao_brasil' table_name,
+                 'meta-brasil.parquet' file_uri, 'selected' status,
+                 'run-meta-brasil' source_run_id,
+                 timestamp '2025-01-15 09:00:00' ingested_at
+    expect:
+      rows:
+        - {ano: 2024, rede: publica}

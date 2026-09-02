@@ -1,215 +1,4 @@
-from pathlib import Path
-from typing import Final
-
-import duckdb
-import pytest
-
-from tests.sql.bigquery_script_runner import (
-    ScriptAssertionError,
-    ScriptRunOptions,
-    run_bigquery_script,
-)
-from tests.sql.dbt_model_runner import materialize_dbt_model
-
-EVALUATE_RELEASE: Final = Path("sql/quality/evaluate_release.sql")
-PROMOTE_RELEASE: Final = Path("sql/quality/promote_release.sql")
-RELEASE_METRICS: Final = Path("dbt/models/quality/release_metrics.sql")
-RELEASE_PERCENTAGE_METRICS: Final = Path("dbt/models/quality/release_percentage_metrics.sql")
-PROPORTION_FIELDS: Final = tuple(f"proporcao_aluno_nivel_{level}" for level in range(9))
-
-
-def _null_update(table: str, column: str) -> str:
-    update = "update"
-    return f"{update} {table} set {column} = null where release_id = 'release-b'"
-
-
-REQUIRED_NULL_CASES: Final = (
-    *(
-        (
-            _null_update(table, "taxa_alfabetizacao"),
-            ("percentage_ranges",),
-        )
-        for table in ("silver_municipio", "silver_uf")
-    ),
-    *(
-        (
-            _null_update(table, field),
-            ("percentage_ranges", "proportions_sum"),
-        )
-        for table in ("silver_municipio", "silver_uf")
-        for field in PROPORTION_FIELDS
-    ),
-    *(
-        (
-            _null_update(table, field),
-            ("percentage_ranges",),
-        )
-        for table in (
-            "silver_meta_alfabetizacao_municipio",
-            "silver_meta_alfabetizacao_uf",
-            "silver_meta_alfabetizacao_brasil",
-        )
-        for field in ("taxa_alfabetizacao", "percentual_participacao")
-    ),
-    (
-        _null_update("indicador_municipio", "taxa_alfabetizacao"),
-        ("gold_core_nulls",),
-    ),
-    (
-        _null_update("comparativo_meta_resultado", "taxa_resultado"),
-        ("gold_core_nulls",),
-    ),
-    (
-        _null_update("comparativo_meta_resultado", "meta_alfabetizacao"),
-        ("gold_core_nulls",),
-    ),
-)
-OPTIONAL_TARGET_NULL_SQL: Final = tuple(
-    _null_update(table, f"meta_alfabetizacao_{year}")
-    for table in (
-        "silver_meta_alfabetizacao_municipio",
-        "silver_meta_alfabetizacao_uf",
-        "silver_meta_alfabetizacao_brasil",
-    )
-    for year in range(2024, 2031)
-)
-
-
-def install_release_data(connection: duckdb.DuckDBPyConnection) -> None:
-    _ = connection.execute(
-        """
-        create table silver_municipio(
-            release_id varchar, ano int, id_municipio varchar, rede varchar,
-            taxa_alfabetizacao double, media_portugues double,
-            proporcao_aluno_nivel_0 double, proporcao_aluno_nivel_1 double,
-            proporcao_aluno_nivel_2 double, proporcao_aluno_nivel_3 double,
-            proporcao_aluno_nivel_4 double, proporcao_aluno_nivel_5 double,
-            proporcao_aluno_nivel_6 double, proporcao_aluno_nivel_7 double,
-            proporcao_aluno_nivel_8 double
-        );
-        insert into silver_municipio values
-            ('release-a', 2024, '3550308', 'municipal', 70, 200,
-             10, 10, 10, 10, 10, 10, 10, 10, 20),
-            ('release-b', 2024, '3550308', 'municipal', 72, 205,
-             10, 10, 10, 10, 10, 10, 10, 10, 20);
-        create table silver_uf as select
-            release_id, ano, 'SP'::varchar as sigla_uf, rede,
-            taxa_alfabetizacao, media_portugues,
-            proporcao_aluno_nivel_0, proporcao_aluno_nivel_1,
-            proporcao_aluno_nivel_2, proporcao_aluno_nivel_3,
-            proporcao_aluno_nivel_4, proporcao_aluno_nivel_5,
-            proporcao_aluno_nivel_6, proporcao_aluno_nivel_7,
-            proporcao_aluno_nivel_8
-        from silver_municipio;
-        create table silver_meta_alfabetizacao_municipio as select
-            release_id, ano, id_municipio, rede, taxa_alfabetizacao,
-            90::double as percentual_participacao,
-            70::double as meta_alfabetizacao_2024,
-            71::double as meta_alfabetizacao_2025,
-            72::double as meta_alfabetizacao_2026,
-            73::double as meta_alfabetizacao_2027,
-            74::double as meta_alfabetizacao_2028,
-            75::double as meta_alfabetizacao_2029,
-            76::double as meta_alfabetizacao_2030
-        from silver_municipio;
-        create table silver_meta_alfabetizacao_uf as select
-            release_id, ano, 'SP'::varchar as sigla_uf, rede,
-            taxa_alfabetizacao, percentual_participacao,
-            meta_alfabetizacao_2024, meta_alfabetizacao_2025,
-            meta_alfabetizacao_2026, meta_alfabetizacao_2027,
-            meta_alfabetizacao_2028, meta_alfabetizacao_2029,
-            meta_alfabetizacao_2030
-        from silver_meta_alfabetizacao_municipio;
-        create table silver_meta_alfabetizacao_brasil as select
-            release_id, ano, rede, taxa_alfabetizacao, percentual_participacao,
-            meta_alfabetizacao_2024, meta_alfabetizacao_2025,
-            meta_alfabetizacao_2026, meta_alfabetizacao_2027,
-            meta_alfabetizacao_2028, meta_alfabetizacao_2029,
-            meta_alfabetizacao_2030
-        from silver_meta_alfabetizacao_municipio;
-        create table silver_alunos(
-            release_id varchar, ano int, id_municipio varchar, id_escola varchar,
-            id_aluno varchar, rede varchar, proficiencia double, peso_aluno double
-        );
-        insert into silver_alunos values
-            ('release-a', 2024, '3550308', 'school-1', 'student-a', 'municipal', 200, 1),
-            ('release-b', 2024, '3550308', 'school-1', 'student-b', 'municipal', 210, 1);
-        create table stg_alunos as select * from silver_alunos;
-        create table indicador_municipio as select
-            release_id, ano, id_municipio, rede, taxa_alfabetizacao,
-            'Sao Paulo'::varchar as nome_municipio, 'SP'::varchar as sigla_uf
-        from silver_municipio;
-        create table comparativo_meta_resultado as select
-            release_id, ano as ano_resultado, 'municipio'::varchar as nivel_geografico,
-            id_municipio as id_geografia, rede, taxa_alfabetizacao as taxa_resultado,
-            70::double as meta_alfabetizacao
-        from silver_municipio;
-        create table audit_identical_duplicates(release_id varchar, copies int);
-        create table quarantine_conflicting_duplicates(
-            release_id varchar, business_key_hash varchar, row_hash varchar
-        );
-        """
-    )
-
-
-def create_quality_database() -> duckdb.DuckDBPyConnection:
-    connection = duckdb.connect(":memory:")
-    _ = connection.execute(
-        """
-        create table active_release(
-            singleton_key boolean, release_id varchar, prior_release_id varchar,
-            promoted_at timestamp
-        );
-        insert into active_release values (true, 'release-a', null, current_timestamp);
-        create table release_registry(
-            release_id varchar, status varchar, created_at timestamp,
-            promoted_at timestamp, completed_at timestamp
-        );
-        insert into release_registry values
-            ('release-a', 'active', current_timestamp, current_timestamp, current_timestamp),
-            ('release-b', 'succeeded', current_timestamp, null, current_timestamp);
-        create table release_results(
-            release_id varchar, rule_id varchar, metric_value double,
-            severity varchar, action varchar, details varchar
-        );
-        """
-    )
-    install_release_data(connection)
-    return connection
-
-
-def persist_quality_results(
-    connection: duckdb.DuckDBPyConnection, *, release_id: str = "release-b"
-) -> None:
-    tables = connection.execute(
-        "select count(*) from information_schema.tables where table_name = 'silver_municipio'"
-    ).fetchone()
-    if tables == (0,):
-        install_release_data(connection)
-    parameters = {"release_id": release_id}
-    materialize_dbt_model(
-        connection,
-        RELEASE_PERCENTAGE_METRICS,
-        "release_percentage_metrics",
-        parameters,
-    )
-    materialize_dbt_model(
-        connection,
-        RELEASE_METRICS,
-        "release_metrics",
-        parameters,
-    )
-    run_bigquery_script(
-        connection,
-        EVALUATE_RELEASE,
-        options=ScriptRunOptions(parameters=parameters),
-    )
-
-
-def persist_passing_quality_results(
-    connection: duckdb.DuckDBPyConnection, *, release_id: str = "release-b"
-) -> None:
-    persist_quality_results(connection, release_id=release_id)
+from tests.sql.evaluate_release_harness import create_quality_database, persist_quality_results
 
 
 def test_evaluator_calculates_exact_catalog_from_release_tables() -> None:
@@ -230,6 +19,23 @@ def test_evaluator_calculates_exact_catalog_from_release_tables() -> None:
         ).fetchone()
     assert actual == (13, 13, 0)
     assert repeated == (0.0, "pass", "stg_alunos_pre_deduplication")
+
+
+def test_freshness_uses_current_verification_for_reused_annual_snapshot() -> None:
+    with create_quality_database() as connection:
+        _ = connection.execute(
+            "update release_files set ingested_at = current_timestamp - interval 90 day"
+        )
+
+        persist_quality_results(connection)
+        freshness = connection.execute(
+            """
+            select metric_value, severity, action from release_results
+            where rule_id = 'pipeline_freshness'
+            """
+        ).fetchone()
+
+    assert freshness == (0.0, "pass", "promote")
 
 
 def test_source_defects_change_measured_results_without_metric_parameters() -> None:
@@ -262,9 +68,32 @@ def test_source_defects_change_measured_results_without_metric_parameters() -> N
     ]
 
 
+def test_relationships_measure_missing_directory_and_meta_before_gold_joins() -> None:
+    with create_quality_database() as connection:
+        _ = connection.execute("delete from municipio")
+        _ = connection.execute(
+            "delete from silver_meta_alfabetizacao_uf where release_id = 'release-b'"
+        )
+
+        persist_quality_results(connection)
+        actual = connection.execute(
+            """
+            select round(metric_value, 6), severity, details from release_results
+            where rule_id = 'relationships'
+            """
+        ).fetchone()
+
+    assert actual is not None
+    assert actual[0] == 16.666667
+    assert actual[1:] == ("critical", "sete_relacoes_de_referencia")
+
+
 def test_missing_baseline_is_an_explicit_warning() -> None:
     with create_quality_database() as connection:
-        _ = connection.execute("update active_release set release_id = 'missing-baseline'")
+        _ = connection.execute(
+            "update release_registry set baseline_release_id = 'missing-baseline' \
+where release_id = 'release-b'"
+        )
         persist_quality_results(connection)
         actual = connection.execute(
             """
@@ -279,41 +108,61 @@ def test_missing_baseline_is_an_explicit_warning() -> None:
     ]
 
 
-@pytest.mark.parametrize(("defect_sql", "critical_rules"), REQUIRED_NULL_CASES)
-def test_required_percentage_null_is_critical_and_blocks_promotion(
-    defect_sql: str, critical_rules: tuple[str, ...]
-) -> None:
-    with create_quality_database() as connection:
-        _ = connection.execute(defect_sql)
-        persist_quality_results(connection)
-        actual = connection.execute(
-            "select rule_id from release_results where severity = 'critical' order by rule_id"
-        ).fetchall()
-        assert actual == [(rule,) for rule in sorted(critical_rules)]
-        with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(
-                connection,
-                PROMOTE_RELEASE,
-                options=ScriptRunOptions(parameters={"release_id": "release-b"}),
-            )
-
-
-def test_optional_mean_and_unselected_annual_targets_do_not_become_critical() -> None:
+def test_known_rr_meta_gap_warns_without_breaking_relationships() -> None:
     with create_quality_database() as connection:
         _ = connection.execute(
-            "update silver_municipio set media_portugues = null where release_id = 'release-b'"
+            """
+            insert into municipio values ('1400100', 'Boa Vista', 'RR');
+            insert into silver_uf values (
+                'release-b', 2024, 'RR', 'publica', 70, 200,
+                10, 10, 10, 10, 10, 10, 10, 10, 20
+            );
+            insert into silver_meta_alfabetizacao_uf values (
+                'release-b', 2024, 'RR', 'publica', null, null,
+                70, 71, 72, 73, 74, 75, 76
+            );
+            insert into quarantine_meta_alfabetizacao_uf values (
+                'release-b', 2024, 'RR', 'publica',
+                'meta-uf-rr-2024', current_timestamp,
+                'meta_alfabetizacao_uf',
+                'taxa_alfabetizacao_and_percentual_participacao_missing'
+            );
+            """
         )
-        for update_sql in OPTIONAL_TARGET_NULL_SQL:
-            _ = connection.execute(update_sql)
         persist_quality_results(connection)
-        assert connection.execute(
-            "select count(*) from release_results where severity = 'critical'"
-        ).fetchone() == (0,)
-        assert connection.execute(
-            "select severity, details from release_results where rule_id = 'optional_null_delta'"
-        ).fetchone() == ("warning", "media_portugues_pp_delta")
-        run_bigquery_script(
-            connection,
-            PROMOTE_RELEASE,
-            options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+        actual = connection.execute(
+            """
+            select rule_id, severity, metric_value
+            from release_results
+            where rule_id in ('required_keys', 'relationships', 'percentage_ranges')
+            order by rule_id
+            """
+        ).fetchall()
+
+    assert actual == [
+        ("percentage_ranges", "pass", 0.0),
+        ("relationships", "pass", 100.0),
+        ("required_keys", "warning", 0.0),
+    ]
+
+
+def test_unapproved_meta_gap_is_critical() -> None:
+    with create_quality_database() as connection:
+        _ = connection.execute(
+            """
+            insert into quarantine_meta_alfabetizacao_uf values (
+                'release-b', 2024, 'SP', 'publica',
+                'meta-uf-sp-2024', current_timestamp,
+                'meta_alfabetizacao_uf', 'taxa_alfabetizacao_missing'
+            );
+            """
         )
+        persist_quality_results(connection)
+        actual = connection.execute(
+            """
+            select severity, action from release_results
+            where rule_id = 'required_keys'
+            """
+        ).fetchone()
+
+    assert actual == ("critical", "quarantine_and_block")

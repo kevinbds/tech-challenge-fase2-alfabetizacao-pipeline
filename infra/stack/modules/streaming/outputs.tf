@@ -1,5 +1,14 @@
 output "topic_id" { value = google_pubsub_topic.events.id }
 output "topic_name" { value = google_pubsub_topic.events.name }
+output "schema_definition" { value = google_pubsub_schema.municipal_rate.definition }
+output "topic_encoding" { value = google_pubsub_topic.events.schema_settings[0].encoding }
+output "topic_persistence_regions" { value = google_pubsub_topic.events.message_storage_policy[0].allowed_persistence_regions }
+output "dead_letter_persistence_regions" {
+  value = {
+    for key, topic in google_pubsub_topic.dead_letter :
+    key => topic.message_storage_policy[0].allowed_persistence_regions
+  }
+}
 output "dataflow_subscription_id" { value = google_pubsub_subscription.dataflow.id }
 output "archive_subscription_id" { value = google_pubsub_subscription.raw_archive.id }
 output "dead_letter_topic_ids" { value = { for key, topic in google_pubsub_topic.dead_letter : key => topic.id } }

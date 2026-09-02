@@ -1,6 +1,34 @@
 {
-  "version": "1.0",
-  "rates": {"bigquery_per_tib": "31.25", "dataflow_per_worker_hour": "0.30", "storage_per_gb_month": "0.13", "pubsub_per_gib": "0.20"},
-  "profiles": {"demo": {"currency": "BRL", "bytes_processed": 1024, "workers": 3, "worker_hours": "0.25", "storage_gb_month": "1", "pubsub_gib": "0.01"}},
-  "budget_amount": "50", "budget_is_hard_cap": false, "min_instances": 0, "bronze_storage_class": "STANDARD", "landing_retention_days": 7, "streaming_retention_days": 30
+  "version": "2.0",
+  "bigquery_location": "US",
+  "runtime_location": "us-central1",
+  "storage_location": "us-central1",
+  "rates": {
+    "bigquery_per_tib": "34.38",
+    "bigquery_storage_write_api_per_gib": "0.1375",
+    "bigquery_active_storage_per_gib_month": "0.11",
+    "dataflow_vcpu_per_hour": "0.3795",
+    "dataflow_memory_per_gib_hour": "0.0195635",
+    "dataflow_standard_pd_per_gib_hour": "0.000297",
+    "dataflow_streaming_engine_compute_unit_hour": "0.4895",
+    "gcs_storage_per_gib_month": "0.11",
+    "gcs_replication_per_gib": "0.11",
+    "gcs_class_a_operations_per_1000": "0.0275",
+    "gcs_class_b_operations_per_1000": "0.0022",
+    "pubsub_publish_delivery_per_gib": "0.21484375",
+    "pubsub_gcs_export_per_gib": "0.2685546875",
+    "cloud_run_vcpu_second": "0.000099",
+    "cloud_run_gib_second": "0.000011",
+    "workflows_internal_steps_per_1000": "0.055",
+    "scheduler_per_job_month": "0.55",
+    "artifact_registry_per_gib_month": "0.55",
+    "cloud_build_build_images_per_minute": "0.0858",
+    "cloud_build_verify_images_per_minute": "0.033",
+    "logging_per_gib": "2.75",
+    "monitoring_per_mib": "1.419",
+    "network_egress_per_gib": "1.045",
+    "cross_region_data_transfer_per_gib": "0.77"
+  },
+  "profiles": {"demo": {"currency": "BRL", "bigquery_total_bytes_processed": 1, "bigquery_query_count": 1, "bigquery_max_bytes_billed_per_query": 26843545600, "bigquery_storage_write_api_gib": "0", "bigquery_active_storage_gib_month": "0", "dataflow_max_workers": 3, "dataflow_runtime_hours": "0", "dataflow_worker_vcpus": 4, "dataflow_worker_memory_gib": "15", "dataflow_disk_gib": "30", "dataflow_streaming_engine_compute_unit_hours": "0", "gcs_storage_gib_month": "0", "gcs_replication_written_gib": "0", "gcs_class_a_operations_per_1000": "0", "gcs_class_b_operations_per_1000": "0", "pubsub_publish_delivery_gib": "0", "pubsub_gcs_export_gib": "0", "cloud_run_vcpu_seconds": "0", "cloud_run_gib_seconds": "0", "workflows_internal_steps": 0, "scheduler_jobs_month": "0", "artifact_registry_gib_month": "0", "cloud_build_build_images_minutes": "0", "cloud_build_verify_images_minutes": "0", "logging_gib": "0", "monitoring_mib": "0", "network_egress_gib": "0", "cross_region_data_transfer_gib": "0"}},
+  "budget_amount": "50", "budget_is_hard_cap": false, "usd_to_brl": "5.50", "usd_to_brl_as_of": "2026-08-30", "rate_basis": "gross_without_free_tier", "min_instances": 0, "bronze_storage_class": "STANDARD", "landing_retention_days": 7, "streaming_retention_days": 30
 }

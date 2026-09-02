@@ -1,14 +1,98 @@
 main:
   params: [args]
   steps:
+    - require_map_input:
+        switch:
+          - condition: ${get_type(args) != "map"}
+            raise: "A entrada deve ser um objeto com release_year e action opcional"
+    - validate_input_keys:
+        assign:
+          - input_keys: ${keys(args)}
+    - require_supported_input:
+        switch:
+          - condition: >-
+              ${len(input_keys) > 2 or not("release_year" in input_keys) or
+              (len(input_keys) == 2 and not("action" in input_keys))}
+            raise: "Somente release_year e action são aceitos"
+    - read_input:
+        assign:
+          - action: ${default(map.get(args, "action"), "run")}
+          - release_year: ${map.get(args, "release_year")}
     - init:
         assign:
-          - project_id: ${args.project_id}
-          - region: ${args.region}
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - region: ${sys.get_env("GOOGLE_CLOUD_LOCATION")}
+          - flex_template_spec_gcs_uri: ${sys.get_env("ALFABETIZACAO_FLEX_TEMPLATE_URI")}
+          - dataflow_subscription: ${sys.get_env("ALFABETIZACAO_DATAFLOW_SUBSCRIPTION")}
+          - valid_staging_table: ${sys.get_env("ALFABETIZACAO_VALID_TABLE")}
+          - quarantine_table: ${sys.get_env("ALFABETIZACAO_QUARANTINE_TABLE")}
+          - dataflow_service_account: ${sys.get_env("ALFABETIZACAO_DATAFLOW_SERVICE_ACCOUNT")}
+          - dataflow_sdk_container_image: ${sys.get_env("ALFABETIZACAO_DATAFLOW_SDK_CONTAINER_IMAGE")}
+          - temp_location: ${sys.get_env("ALFABETIZACAO_DATAFLOW_TEMP_LOCATION")}
+          - staging_location: ${sys.get_env("ALFABETIZACAO_DATAFLOW_STAGING_LOCATION")}
+          - producer_job_name: ${sys.get_env("ALFABETIZACAO_PRODUCER_JOB")}
+          - topic: ${sys.get_env("ALFABETIZACAO_TOPIC")}
+          - raw_archive_bucket: ${sys.get_env("ALFABETIZACAO_RAW_ARCHIVE_BUCKET")}
+          - raw_archive_prefix: ${sys.get_env("ALFABETIZACAO_RAW_ARCHIVE_PREFIX")}
+          - dbt_job_name: ${sys.get_env("ALFABETIZACAO_DBT_JOB")}
+          - maximum_bytes_billed: ${sys.get_env("ALFABETIZACAO_MAXIMUM_BYTES_BILLED")}
+          - data_location: ${sys.get_env("ALFABETIZACAO_DATA_LOCATION")}
+          - gold_table: ${sys.get_env("ALFABETIZACAO_GOLD_TABLE")}
+          - duplicate_audit_table: ${sys.get_env("ALFABETIZACAO_DUPLICATE_AUDIT_TABLE")}
+          - backlog_subscription_ids: ${json.decode(sys.get_env("ALFABETIZACAO_BACKLOG_SUBSCRIPTION_IDS"))}
           - correlation_id: ${uuid.generate()}
-          - job_name: ${"literacy-demo-" + text.substring(correlation_id, 0, 24)}
+          - job_name: ${"literacy-demo-" + text.substring(text.replace_all(correlation_id, "-", ""), 0, 24)}
           - window_start: ${time.format(sys.now())}
           - dataflow_job_id: null
+          - valid_query_table: ${text.replace_all(valid_staging_table, ":", ".")}
+          - quarantine_query_table: ${text.replace_all(quarantine_table, ":", ".")}
+          - silver_query: ${"SELECT COUNT(DISTINCT event_id) FROM `" + valid_query_table + "` WHERE correlation_id = @correlation_id AND ingestion_time >= @window_start"}
+          - quarantine_query: ${"SELECT COUNT(DISTINCT event_fingerprint) FROM `" + quarantine_query_table + "` WHERE correlation_id = @correlation_id AND ingestion_time >= @window_start"}
+          - duplicate_query: ${"SELECT COUNT(*) FROM `" + duplicate_audit_table + "` WHERE correlation_id = @correlation_id AND ingestion_time >= @window_start"}
+          - gold_query: ${"SELECT COUNT(*) FROM `" + gold_table + "` WHERE correlation_id = @correlation_id AND origem = 'stream_simulacao'"}
+          - release_query: >-
+              ${"SELECT COUNT(*) FROM `" + project_id + ".ops.active_release` AS active " +
+              "JOIN `" + project_id + ".ops.release_registry` AS registry " +
+              "ON active.release_id = registry.release_id " +
+              "WHERE active.singleton_key = TRUE " +
+              "AND active.release_id != '__bootstrap__' " +
+              "AND registry.status = 'active' " +
+              "AND registry.reference_year = @release_year"}
+    - require_supported_values:
+        switch:
+          - condition: ${get_type(release_year) != "integer" or release_year != 2024}
+            raise: "release_year deve ser 2024 para a fixture oficial da demonstração"
+          - condition: ${action != "run"}
+            raise: "A única action aceita é run"
+    - check_active_release:
+        call: googleapis.bigquery.v2.jobs.query
+        args:
+          projectId: ${project_id}
+          body:
+            useLegacySql: false
+            query: ${release_query}
+            location: ${data_location}
+            maximumBytesBilled: ${maximum_bytes_billed}
+            timeoutMs: 30000
+            parameterMode: NAMED
+            queryParameters:
+              - {name: release_year, parameterType: {type: INT64}, parameterValue: {value: '${string(release_year)}'}}
+        result: release_result
+    - normalize_active_release:
+        assign:
+          - release_query_complete: ${default(map.get(release_result, "jobComplete"), false)}
+          - release_rows: ${default(map.get(release_result, "rows"), [])}
+    - require_active_release_shape:
+        switch:
+          - condition: ${not(release_query_complete) or len(release_rows) != 1 or len(default(map.get(release_rows[0], "f"), [])) != 1}
+            raise: "Não foi possível validar a release ativa"
+    - read_active_release_count:
+        assign:
+          - active_release_count: ${int(release_rows[0].f[0].v)}
+    - require_active_release:
+        switch:
+          - condition: ${active_release_count != 1}
+            raise: "A demo exige uma release ativa do mesmo ano informado"
     - guarded_execution:
         try:
           steps:
@@ -20,18 +104,23 @@ main:
                   body:
                     launchParameter:
                       jobName: ${job_name}
-                      containerSpecGcsPath: ${args.flex_template_spec_gcs_uri}
+                      containerSpecGcsPath: ${flex_template_spec_gcs_uri}
                       parameters:
-                        input_subscription: ${args.dataflow_subscription}
-                        valid_table: ${args.valid_staging_table}
-                        quarantine_table: ${args.quarantine_table}
-                        write_method: STORAGE_API_AT_LEAST_ONCE
+                        input_subscription: ${dataflow_subscription}
+                        valid_table: ${valid_staging_table}
+                        quarantine_table: ${quarantine_table}
                       environment:
-                        serviceAccountEmail: ${args.dataflow_service_account}
-                        tempLocation: ${args.temp_location}
-                        stagingLocation: ${args.staging_location}
+                        serviceAccountEmail: ${dataflow_service_account}
+                        sdkContainerImage: ${dataflow_sdk_container_image}
+                        tempLocation: ${temp_location}
+                        stagingLocation: ${staging_location}
                         numWorkers: 1
                         maxWorkers: 2
+                        workerRegion: '${region}'
+                        enableStreamingEngine: true
+                        diskSizeGb: 30
+                        additionalPipelineOptions:
+                          - dataflow_service_options=enable_streaming_engine_resource_based_billing
                         additionalExperiments: [enable_portable_runner]
                         additionalUserLabels: {run_id: '${correlation_id}'}
                 result: launch_result
@@ -40,7 +129,7 @@ main:
                   - dataflow_job_id: ${launch_result.job.id}
             - wait_running:
                 call: wait_dataflow_state
-                args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', target_state: JOB_STATE_RUNNING, max_attempts: 90}
+                args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', target_state: JOB_STATE_RUNNING, max_attempts: 60}
                 result: running_result
             - require_running:
                 switch:
@@ -49,35 +138,48 @@ main:
             - publish_fixture:
                 call: googleapis.run.v2.projects.locations.jobs.run
                 args:
-                  name: ${args.producer_job_name}
+                  name: ${producer_job_name}
+                  connector_params: {timeout: 990}
                   body:
                     overrides:
                       containerOverrides:
-                        - args: [--mode, pubsub, --topic, '${args.topic}', --fixture, /app/contracts/events/fixtures/demo.json, --report, /tmp/producer-report.json, --correlation-id, '${correlation_id}']
-                result: producer_execution
+                        - args: [--mode, pubsub, --topic, '${topic}', --fixture, /app/contracts/events/fixtures/demo.json, --report, /tmp/producer-report.json, --year, '${string(release_year)}']
+                          env:
+                            - name: CORRELATION_ID
+                              value: '${correlation_id}'
             - independent_stage_checks:
                 parallel:
                   branches:
-                    - silver_branch:
+                    - staging_branch:
                         steps:
                           - wait_silver:
                               call: wait_bigquery_count
-                              args: {project_id: '${project_id}', query: '${args.silver_count_query}', expected: 8, correlation_id: '${correlation_id}', window_start: '${window_start}', max_attempts: 60}
+                              args: {project_id: '${project_id}', query: '${silver_query}', expected: 8, correlation_id: '${correlation_id}', window_start: '${window_start}', maximum_bytes_billed: '${maximum_bytes_billed}', data_location: '${data_location}', max_attempts: 60}
                               result: silver_result
                           - require_silver:
                               switch:
                                 - condition: ${not(silver_result.success)}
-                                  raise: "Silver correlacionada não materializou oito eventos"
+                                  raise: "O staging não materializou oito eventos lógicos correlacionados"
+                    - quarantine_branch:
+                        steps:
+                          - wait_quarantine:
+                              call: wait_bigquery_count
+                              args: {project_id: '${project_id}', query: '${quarantine_query}', expected: 1, correlation_id: '${correlation_id}', window_start: '${window_start}', maximum_bytes_billed: '${maximum_bytes_billed}', data_location: '${data_location}', max_attempts: 60}
+                              result: quarantine_result
+                          - require_quarantine:
+                              switch:
+                                - condition: ${not(quarantine_result.success)}
+                                  raise: "A quarentena não registrou o evento inválido correlacionado"
                     - raw_archive_branch:
                         steps:
                           - wait_raw_avro:
                               call: wait_gcs_object
-                              args: {bucket: '${args.raw_archive_bucket}', prefix: '${args.raw_archive_prefix + "/" + correlation_id + "/"}', window_start: '${window_start}', max_attempts: 60}
+                              args: {bucket: '${raw_archive_bucket}', prefix: '${raw_archive_prefix + "/"}', window_start: '${window_start}', max_attempts: 18, max_pages: 10}
                               result: raw_result
                           - require_raw:
                               switch:
                                 - condition: ${not(raw_result.success)}
-                                  raise: "Arquivo raw Avro desta execução não apareceu"
+                                  raise: "Arquivo raw Avro da janela da execução não apareceu"
             - request_drain:
                 call: googleapis.dataflow.v1b3.projects.locations.jobs.update
                 args:
@@ -88,7 +190,7 @@ main:
                   connector_params: {timeout: 30}
             - wait_drained:
                 call: wait_dataflow_state
-                args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', target_state: JOB_STATE_DRAINED, max_attempts: 120}
+                args: {project_id: '${project_id}', region: '${region}', job_id: '${dataflow_job_id}', target_state: JOB_STATE_DRAINED, max_attempts: 90}
                 result: drained_result
             - require_drained:
                 switch:
@@ -97,7 +199,7 @@ main:
             - build_stream_models:
                 call: googleapis.run.v2.projects.locations.jobs.run
                 args:
-                  name: ${args.dbt_job_name}
+                  name: ${dbt_job_name}
                   body:
                     overrides:
                       containerOverrides:
@@ -105,25 +207,55 @@ main:
                           env:
                             - {name: CORRELATION_ID, value: '${correlation_id}'}
                             - {name: RUN_STARTED, value: '${window_start}'}
-                  connector_params: {timeout: 3600}
-                result: dbt_execution
-            - check_backlogs:
-                call: googleapis.bigquery.v2.jobs.query
-                args:
-                  projectId: ${project_id}
-                  body:
-                    useLegacySql: false
-                    query: ${args.backlog_and_dlq_assert_sql}
-                    maximumBytesBilled: ${args.maximum_bytes_billed}
-                    parameterMode: NAMED
-                    queryParameters:
-                      - {name: correlation_id, parameterType: {type: STRING}, parameterValue: {value: '${correlation_id}'}}
-                      - {name: window_start, parameterType: {type: TIMESTAMP}, parameterValue: {value: '${window_start}'}}
-                result: backlog_result
-            - require_backlogs:
-                switch:
-                  - condition: ${default(map.get(backlog_result, "jobComplete"), false) == false}
-                    raise: "Validação correlacionada de backlog/DLQ falhou"
+                  connector_params: {timeout: 3900}
+            - check_final_evidence:
+                parallel:
+                  branches:
+                    - duplicate_branch:
+                        steps:
+                          - check_duplicate:
+                              call: wait_bigquery_count
+                              args: {project_id: '${project_id}', query: '${duplicate_query}', expected: 1, correlation_id: '${correlation_id}', window_start: '${window_start}', maximum_bytes_billed: '${maximum_bytes_billed}', data_location: '${data_location}', max_attempts: 6}
+                              result: duplicate_result
+                          - require_duplicate:
+                              switch:
+                                - condition: ${not(duplicate_result.success)}
+                                  raise: "A auditoria não registrou exatamente uma duplicata"
+                    - gold_branch:
+                        steps:
+                          - check_gold:
+                              call: wait_bigquery_count
+                              args: {project_id: '${project_id}', query: '${gold_query}', expected: 8, correlation_id: '${correlation_id}', window_start: '${window_start}', maximum_bytes_billed: '${maximum_bytes_billed}', data_location: '${data_location}', max_attempts: 6}
+                              result: gold_result
+                          - require_gold:
+                              switch:
+                                - condition: ${not(gold_result.success)}
+                                  raise: "A Gold não expôs exatamente oito indicadores da simulação"
+                    - backlog_branch:
+                        steps:
+                          - wait_main_backlogs:
+                              call: wait_main_subscription_backlogs
+                              args:
+                                project_id: '${project_id}'
+                                main_subscription_ids: '${[backlog_subscription_ids[0], backlog_subscription_ids[1]]}'
+                                window_start: '${window_start}'
+                                max_attempts: 36
+                              result: main_backlog_result
+                          - require_empty_main_backlogs:
+                              switch:
+                                - condition: ${not(main_backlog_result.success)}
+                                  raise: "Há backlog nas assinaturas principais"
+                          - wait_dead_letter_window:
+                              call: wait_no_dead_letter_events
+                              args:
+                                project_id: '${project_id}'
+                                dlq_metric_subscription_ids: '${[backlog_subscription_ids[0], backlog_subscription_ids[1]]}'
+                                window_start: '${window_start}'
+                              result: dead_letter_result
+                          - require_no_dead_letter_events:
+                              switch:
+                                - condition: ${not(dead_letter_result.success)}
+                                  raise: "Houve encaminhamento para dead letter na execução"
         except:
           as: workflow_error
           steps:
@@ -135,10 +267,18 @@ main:
                   as: cleanup_error
                   steps:
                     - record_cleanup_failure:
-                        call: sys.log
-                        args:
-                          severity: ERROR
-                          text: "Dataflow cleanup falhou; preservando erro original"
+                        try:
+                          steps:
+                            - write_cleanup_log:
+                                call: sys.log
+                                args:
+                                  severity: ERROR
+                                  text: "A limpeza do Dataflow falhou; preservando o erro original"
+                        except:
+                          as: logging_error
+                          steps:
+                            - preserve_workflow_error:
+                                raise: ${workflow_error}
             - preserve_failure:
                 raise: ${workflow_error}
     - complete:
@@ -235,7 +375,7 @@ cleanup_dataflow:
             next: choose_unique_match
           - condition: ${next_page_token in visited_page_tokens}
             next: no_matching_job
-          - condition: ${page_count >= 100}
+          - condition: ${page_count >= 10}
             next: retry_discovery
         next: advance_page
     - advance_page:
@@ -288,14 +428,14 @@ cleanup_dataflow:
           connector_params: {timeout: 30}
     - wait_cancelled:
         call: wait_dataflow_state
-        args: {project_id: '${project_id}', region: '${region}', job_id: '${job_id}', target_state: JOB_STATE_CANCELLED, max_attempts: 120}
+        args: {project_id: '${project_id}', region: '${region}', job_id: '${job_id}', target_state: JOB_STATE_CANCELLED, max_attempts: 60}
         result: cleanup_result
     - finish: {return: '${cleanup_result}'}
 
 wait_dataflow_state:
   params: [project_id, region, job_id, target_state, max_attempts]
   steps:
-    - init: {assign: [{attempt: 0}, {final_state: JOB_STATE_UNKNOWN}]}
+    - init: {assign: [{attempt: 1}, {final_state: JOB_STATE_UNKNOWN}]}
     - inspect:
         call: googleapis.dataflow.v1b3.projects.locations.jobs.get
         args: {projectId: '${project_id}', location: '${region}', jobId: '${job_id}'}
@@ -313,9 +453,9 @@ wait_dataflow_state:
     - increment: {assign: [{attempt: '${attempt + 1}'}], next: inspect}
 
 wait_bigquery_count:
-  params: [project_id, query, expected, correlation_id, window_start, max_attempts]
+  params: [project_id, query, expected, correlation_id, window_start, maximum_bytes_billed, data_location, max_attempts]
   steps:
-    - init: {assign: [{attempt: 0}]}
+    - init: {assign: [{attempt: 1}]}
     - query_count:
         call: googleapis.bigquery.v2.jobs.query
         args:
@@ -323,14 +463,30 @@ wait_bigquery_count:
           body:
             useLegacySql: false
             query: ${query}
+            location: ${data_location}
+            maximumBytesBilled: ${maximum_bytes_billed}
             parameterMode: NAMED
             queryParameters:
               - {name: correlation_id, parameterType: {type: STRING}, parameterValue: {value: '${correlation_id}'}}
               - {name: window_start, parameterType: {type: TIMESTAMP}, parameterValue: {value: '${window_start}'}}
         result: count_result
+    - normalize_query_result:
+        assign:
+          - query_complete: ${default(map.get(count_result, "jobComplete"), false)}
+          - query_rows: ${default(map.get(count_result, "rows"), [])}
+    - require_count_shape:
+        switch:
+          - condition: ${query_complete and len(query_rows) == 1 and len(default(map.get(query_rows[0], "f"), [])) == 1}
+            next: read_count
+          - condition: ${attempt >= max_attempts}
+            return: {success: false}
+        next: pause
+    - read_count:
+        assign:
+          - observed: ${int(query_rows[0].f[0].v)}
     - decide:
         switch:
-          - condition: ${int(count_result.rows[0].f[0].v) == expected}
+          - condition: ${observed == expected}
             return: {success: true}
           - condition: ${attempt >= max_attempts}
             return: {success: false}
@@ -338,18 +494,231 @@ wait_bigquery_count:
     - increment: {assign: [{attempt: '${attempt + 1}'}], next: query_count}
 
 wait_gcs_object:
-  params: [bucket, prefix, window_start, max_attempts]
+  params: [bucket, prefix, window_start, max_attempts, max_pages]
   steps:
-    - init: {assign: [{attempt: 0}]}
+    - init:
+        assign:
+          - attempt: 1
+          - object_index: 0
+          - object_count: 0
+          - current_window_object_found: false
+          - page_token: ""
+          - next_page_token: ""
+          - page_count: 1
+          - visited_page_tokens: [""]
     - list_objects:
         call: googleapis.storage.v1.objects.list
-        args: {bucket: '${bucket}', prefix: '${prefix}', maxResults: 1}
+        args: {bucket: '${bucket}', prefix: '${prefix}', maxResults: 1000, pageToken: '${page_token}'}
         result: objects
+    - init_object_scan:
+        assign:
+          - object_index: 0
+          - object_count: ${len(default(map.get(objects, "items"), []))}
+          - current_window_object_found: false
+    - scan_current_window:
+        switch:
+          - condition: ${object_index >= object_count}
+            next: capture_next_page
+        next: inspect_object
+    - inspect_object:
+        assign:
+          - candidate: ${objects.items[object_index]}
+    - candidate_is_current:
+        switch:
+          - condition: ${time.parse(candidate.updated) >= time.parse(window_start)}
+            next: mark_current_window_object
+        next: advance_object
+    - mark_current_window_object:
+        assign:
+          - current_window_object_found: true
+        next: decide
+    - advance_object:
+        assign:
+          - object_index: ${object_index + 1}
+        next: scan_current_window
+    - capture_next_page:
+        assign:
+          - next_page_token: ${default(map.get(objects, "nextPageToken"), "")}
+    - continue_or_decide:
+        switch:
+          - condition: ${next_page_token == "" or next_page_token in visited_page_tokens}
+            next: decide
+          - condition: ${page_count >= max_pages}
+            next: decide
+        next: advance_page
+    - advance_page:
+        assign:
+          - page_token: ${next_page_token}
+          - page_count: ${page_count + 1}
+          - visited_page_tokens: ${list.concat(visited_page_tokens, next_page_token)}
+        next: list_objects
     - decide:
         switch:
-          - condition: ${len(default(map.get(objects, "items"), [])) > 0 and objects.items[0].updated >= window_start}
+          - condition: ${current_window_object_found}
             return: {success: true}
           - condition: ${attempt >= max_attempts}
             return: {success: false}
     - pause: {call: sys.sleep, args: {seconds: 10}}
-    - increment: {assign: [{attempt: '${attempt + 1}'}], next: list_objects}
+    - increment:
+        assign:
+          - attempt: ${attempt + 1}
+          - page_token: ""
+          - next_page_token: ""
+          - page_count: 1
+          - visited_page_tokens: [""]
+        next: list_objects
+
+wait_main_subscription_backlogs:
+  params: [project_id, main_subscription_ids, window_start, max_attempts]
+  steps:
+    - init:
+        assign:
+          - attempt: 1
+          - subscription_index: 0
+    - choose_subscription:
+        switch:
+          - condition: ${subscription_index >= len(main_subscription_ids)}
+            return: {success: true}
+    - split_subscription_id:
+        assign:
+          - subscription_parts: ${text.split(main_subscription_ids[subscription_index], "/")}
+    - read_subscription_name:
+        assign:
+          - subscription_name: ${subscription_parts[len(subscription_parts) - 1]}
+    - verify_subscription_exists:
+        call: googleapis.pubsub.v1.projects.subscriptions.get
+        args:
+          subscription: ${main_subscription_ids[subscription_index]}
+    - read_backlog_metric:
+        call: googleapis.monitoring.v3.projects.timeSeries.list
+        args:
+          name: ${"projects/" + project_id}
+          filter: '${"metric.type = \"pubsub.googleapis.com/subscription/num_undelivered_messages\" AND resource.type = \"pubsub_subscription\" AND resource.labels.subscription_id = \"" + subscription_name + "\""}'
+          interval:
+            startTime: ${window_start}
+            endTime: ${time.format(sys.now())}
+          view: FULL
+          pageSize: 1
+        result: backlog_metric
+    - normalize_time_series:
+        assign:
+          - time_series: ${default(map.get(backlog_metric, "timeSeries"), [])}
+    - require_time_series:
+        switch:
+          - condition: ${len(time_series) == 0}
+            next: retry_or_fail
+    - normalize_points:
+        assign:
+          - metric_points: ${default(map.get(time_series[0], "points"), [])}
+    - require_metric_point:
+        switch:
+          - condition: ${len(metric_points) == 0}
+            next: retry_or_fail
+    - require_empty_subscription:
+        switch:
+          - condition: ${int(metric_points[0].value.int64Value) != 0}
+            next: retry_or_fail
+        next: advance_subscription
+    - advance_subscription:
+        assign:
+          - subscription_index: ${subscription_index + 1}
+        next: choose_subscription
+    - retry_or_fail:
+        switch:
+          - condition: ${attempt >= max_attempts}
+            return: {success: false}
+    - pause_before_retry:
+        call: sys.sleep
+        args: {seconds: 10}
+    - start_next_attempt:
+        assign:
+          - attempt: ${attempt + 1}
+          - subscription_index: 0
+        next: choose_subscription
+
+wait_no_dead_letter_events:
+  params: [project_id, dlq_metric_subscription_ids, window_start]
+  steps:
+    - init:
+        assign:
+          - subscription_index: 0
+          - page_token: ""
+          - next_page_token: ""
+          - dlq_visibility_time: ${sys.now() + 300}
+    - wait_for_dlq_visibility:
+        call: sys.sleep_until
+        args: {time: '${time.format(dlq_visibility_time)}'}
+    - choose_subscription:
+        switch:
+          - condition: ${subscription_index >= len(dlq_metric_subscription_ids)}
+            return: {success: true}
+    - split_subscription_id:
+        assign:
+          - subscription_parts: ${text.split(dlq_metric_subscription_ids[subscription_index], "/")}
+    - read_subscription_name:
+        assign:
+          - subscription_name: ${subscription_parts[len(subscription_parts) - 1]}
+    - verify_dlq_metric_subscription_exists:
+        call: googleapis.pubsub.v1.projects.subscriptions.get
+        args:
+          subscription: ${dlq_metric_subscription_ids[subscription_index]}
+    - read_dead_letter_metric:
+        call: googleapis.monitoring.v3.projects.timeSeries.list
+        args:
+          name: ${"projects/" + project_id}
+          filter: '${"metric.type = \"pubsub.googleapis.com/subscription/dead_letter_message_count\" AND resource.type = \"pubsub_subscription\" AND resource.labels.subscription_id = \"" + subscription_name + "\""}'
+          interval:
+            startTime: ${window_start}
+            endTime: ${time.format(sys.now())}
+          view: FULL
+          pageSize: 1000
+          pageToken: ${page_token}
+        result: dead_letter_metric
+    - capture_metric_page:
+        assign:
+          - dlq_time_series: ${default(map.get(dead_letter_metric, "timeSeries"), [])}
+          - next_page_token: ${default(map.get(dead_letter_metric, "nextPageToken"), "")}
+          - dlq_series_index: 0
+    - choose_series:
+        switch:
+          - condition: ${dlq_series_index >= len(dlq_time_series)}
+            next: next_page_or_advance
+        next: normalize_points
+    - normalize_points:
+        assign:
+          - dlq_points: ${default(map.get(dlq_time_series[dlq_series_index], "points"), [])}
+          - dlq_point_index: 0
+    - choose_point:
+        switch:
+          - condition: ${dlq_point_index >= len(dlq_points)}
+            next: advance_series
+    - require_no_dead_letter_events:
+        switch:
+          - condition: ${int(dlq_points[dlq_point_index].value.int64Value) != 0}
+            next: fail_dead_letter_event
+    - advance_point:
+        assign:
+          - dlq_point_index: ${dlq_point_index + 1}
+        next: choose_point
+    - advance_series:
+        assign:
+          - dlq_series_index: ${dlq_series_index + 1}
+        next: choose_series
+    - fail_dead_letter_event:
+        return: {success: false}
+    - next_page_or_advance:
+        switch:
+          - condition: ${next_page_token == ""}
+            next: advance_subscription
+        next: advance_page
+    - advance_page:
+        assign:
+          - page_token: ${next_page_token}
+          - next_page_token: ""
+        next: read_dead_letter_metric
+    - advance_subscription:
+        assign:
+          - subscription_index: ${subscription_index + 1}
+          - page_token: ""
+          - next_page_token: ""
+        next: choose_subscription

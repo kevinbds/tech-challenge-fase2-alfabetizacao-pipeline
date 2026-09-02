@@ -5,7 +5,7 @@ output "state_bucket" {
 
 output "artifacts_bucket" {
   value       = google_storage_bucket.artifacts.name
-  description = "Bucket de schemas de referência, templates e artefatos assinados."
+  description = "Bucket de schemas de referência, templates e artefatos do build."
 }
 
 output "artifact_registry_repository" {
@@ -19,6 +19,16 @@ output "terraform_deployer_email" {
 
 output "ci_service_account_email" {
   value = google_service_account.ci.email
+}
+
+output "cloud_build_service_account_email" {
+  value       = google_service_account.cloud_build.email
+  description = "Informe este e-mail em GCP_CLOUD_BUILD_SERVICE_ACCOUNT no ambiente protegido do GitHub."
+}
+
+output "artifact_registry_repository_id" {
+  value       = google_artifact_registry_repository.pipeline.repository_id
+  description = "Informe este valor em GCP_ARTIFACT_REPOSITORY no ambiente protegido do GitHub."
 }
 
 output "workload_identity_provider" {

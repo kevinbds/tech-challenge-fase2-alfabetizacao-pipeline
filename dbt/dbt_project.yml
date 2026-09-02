@@ -22,13 +22,15 @@ models:
       +schema: staging
     silver:
       +materialized: incremental
-      +incremental_strategy: insert_overwrite
+      +incremental_strategy: merge
+      +pre-hook: "{{ replace_candidate_rows() }}"
       +partition_by: {field: ano_particao, data_type: date, granularity: year}
       +cluster_by: [release_id, id_municipio, rede]
       +schema: silver
     silver_restricted:
       +materialized: incremental
-      +incremental_strategy: insert_overwrite
+      +incremental_strategy: merge
+      +pre-hook: "{{ replace_candidate_rows() }}"
       +partition_by: {field: ano_particao, data_type: date, granularity: year}
       +cluster_by: [release_id, id_municipio, rede]
       +schema: silver_restricted
@@ -37,6 +39,9 @@ models:
       +incremental_strategy: append
       +schema: quality
     gold:
+      +schema: gold_internal
+    gold_public:
+      +materialized: view
       +schema: gold
     ops:
       +materialized: view

@@ -1,0 +1,128 @@
+version: 2
+
+unit_tests:
+  - name: meta_uf_incompleta_preserva_metas_na_silver_canonica
+    model: silver_meta_alfabetizacao_uf
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select
+            2024 ano, 'RR' sigla_uf, 'publica' rede,
+            null taxa_alfabetizacao, 63 meta_alfabetizacao_2024,
+            65 meta_alfabetizacao_2025, 67 meta_alfabetizacao_2026,
+            69 meta_alfabetizacao_2027, 71 meta_alfabetizacao_2028,
+            73 meta_alfabetizacao_2029, 75 meta_alfabetizacao_2030,
+            null percentual_participacao, 'local-release' release_id,
+            'meta-uf-rr-2024' source_run_id,
+            timestamp '2025-01-15 09:00:00' ingested_at
+          union all
+          select
+            2024, 'SP', 'publica', 61, 63, 65, 67, 69, 71, 73, 75, 89,
+            'local-release', 'meta-uf-sp-2024', timestamp '2025-01-15 09:05:00'
+    expect:
+      format: sql
+      rows: |
+        select
+          2024 ano, 'RR' sigla_uf, 'publica' rede, null taxa_alfabetizacao,
+          63 meta_alfabetizacao_2024, 65 meta_alfabetizacao_2025,
+          67 meta_alfabetizacao_2026, 69 meta_alfabetizacao_2027,
+          71 meta_alfabetizacao_2028, 73 meta_alfabetizacao_2029,
+          75 meta_alfabetizacao_2030, null percentual_participacao,
+          'local-release' release_id, 'meta-uf-rr-2024' source_run_id,
+          timestamp '2025-01-15 09:00:00' ingested_at,
+          date '2024-01-01' ano_particao
+        union all
+        select
+          2024 ano, 'SP' sigla_uf, 'publica' rede, 61 taxa_alfabetizacao,
+          63 meta_alfabetizacao_2024, 65 meta_alfabetizacao_2025,
+          67 meta_alfabetizacao_2026, 69 meta_alfabetizacao_2027,
+          71 meta_alfabetizacao_2028, 73 meta_alfabetizacao_2029,
+          75 meta_alfabetizacao_2030, 89 percentual_participacao,
+          'local-release' release_id, 'meta-uf-sp-2024' source_run_id,
+          timestamp '2025-01-15 09:05:00' ingested_at,
+          date '2024-01-01' ano_particao
+  - name: meta_uf_deduplica_duplicata_identica_e_omite_conflitante
+    model: silver_meta_alfabetizacao_uf
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select
+            2024 ano, 'RR' sigla_uf, 'publica' rede,
+            null taxa_alfabetizacao, 63 meta_alfabetizacao_2024,
+            65 meta_alfabetizacao_2025, 67 meta_alfabetizacao_2026,
+            69 meta_alfabetizacao_2027, 71 meta_alfabetizacao_2028,
+            73 meta_alfabetizacao_2029, 75 meta_alfabetizacao_2030,
+            null percentual_participacao, 'local-release' release_id,
+            'meta-uf-rr-old' source_run_id,
+            timestamp '2025-01-15 09:00:00' ingested_at
+          union all
+          select
+            2024, 'RR', 'publica',
+            null, 63, 65, 67, 69, 71, 73, 75,
+            null, 'local-release', 'meta-uf-rr-new',
+            timestamp '2025-01-15 10:00:00'
+          union all
+          select
+            2024, 'SP', 'publica',
+            61, 63, 65, 67, 69, 71, 73, 75, 89,
+            'local-release', 'meta-uf-sp-old',
+            timestamp '2025-01-15 09:05:00'
+          union all
+          select
+            2024, 'SP', 'publica',
+            62, 63, 65, 67, 69, 71, 73, 75, 89,
+            'local-release', 'meta-uf-sp-new',
+            timestamp '2025-01-15 10:05:00'
+    expect:
+      format: sql
+      rows: |
+        select
+          2024 ano, 'RR' sigla_uf, 'publica' rede, null taxa_alfabetizacao,
+          63 meta_alfabetizacao_2024, 65 meta_alfabetizacao_2025,
+          67 meta_alfabetizacao_2026, 69 meta_alfabetizacao_2027,
+          71 meta_alfabetizacao_2028, 73 meta_alfabetizacao_2029,
+          75 meta_alfabetizacao_2030, null percentual_participacao,
+          'local-release' release_id, 'meta-uf-rr-new' source_run_id,
+          timestamp '2025-01-15 10:00:00' ingested_at,
+          date '2024-01-01' ano_particao
+  - name: meta_uf_incompleta_fica_auditavel_na_quarentena
+    model: quarantine_meta_alfabetizacao_uf
+    given:
+      - input: ref('stg_meta_alfabetizacao_uf')
+        format: sql
+        rows: |
+          select
+            2024 ano, 'RR' sigla_uf, 'publica' rede,
+            null taxa_alfabetizacao, 63 meta_alfabetizacao_2024,
+            65 meta_alfabetizacao_2025, 67 meta_alfabetizacao_2026,
+            69 meta_alfabetizacao_2027, 71 meta_alfabetizacao_2028,
+            73 meta_alfabetizacao_2029, 75 meta_alfabetizacao_2030,
+            null percentual_participacao, 'local-release' release_id,
+            'meta-uf-rr-2024' source_run_id,
+            timestamp '2025-01-15 09:00:00' ingested_at
+          union all
+          select
+            2024, 'SP', 'publica', null, 63, 65, 67, 69, 71, 73, 75, 89,
+            'local-release', 'meta-uf-sp-2024', timestamp '2025-01-15 09:05:00'
+    expect:
+      format: sql
+      rows: |
+        select
+          'local-release' release_id, 2024 ano, 'RR' sigla_uf, 'publica' rede,
+          'meta-uf-rr-2024' source_run_id,
+          timestamp '2025-01-15 09:00:00' ingested_at,
+          'meta_alfabetizacao_uf' source_table,
+          'taxa_alfabetizacao_and_percentual_participacao_missing' reason_code
+        union all
+        select
+          'local-release', 2024, 'SP', 'publica', 'meta-uf-sp-2024',
+          timestamp '2025-01-15 09:05:00', 'meta_alfabetizacao_uf',
+          'taxa_alfabetizacao_missing'

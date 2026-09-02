@@ -101,19 +101,15 @@ def page(jobs: Sequence[str], token: str = "") -> str:
 
 
 def test_payload_harness_finds_unique_match_after_one_hundred_jobs() -> None:
-    # Given a connector scan whose exact target is on page two
     first = page([job(f"other-{index}") for index in range(100)], "page-2")
     second = page([job("target-id", name="demo", run_id="run-1")])
 
-    # When all response pages are scanned
     outcome = discover_from_payloads([[first, second]], job_name="demo", run_id="run-1")
 
-    # Then only the exact correlated job is selected
     assert outcome == DiscoveryOutcome(matched_job_id="target-id", scans=1, pages=2)
 
 
 def test_payload_harness_fails_closed_on_token_cycle_and_duplicate_matches() -> None:
-    # Given a non-adjacent A -> B -> A token cycle and two exact matches
     cycle = [[page([], "A"), page([], "B"), page([], "A")]]
     duplicates = [
         [
@@ -122,11 +118,9 @@ def test_payload_harness_fails_closed_on_token_cycle_and_duplicate_matches() -> 
         ]
     ]
 
-    # When discovery handles both adversarial payload sequences
     cycled = discover_from_payloads(cycle, job_name="demo", run_id="run-1")
     duplicated = discover_from_payloads(duplicates, job_name="demo", run_id="run-1")
 
-    # Then neither ambiguous sequence yields a cancellable identifier
     assert cycled == DiscoveryOutcome(matched_job_id=None, scans=1, pages=3, repeated_token=True)
     assert duplicated == DiscoveryOutcome(
         matched_job_id=None, scans=1, pages=2, duplicate_match=True
@@ -134,17 +128,14 @@ def test_payload_harness_fails_closed_on_token_cycle_and_duplicate_matches() -> 
 
 
 def test_payload_harness_bounds_scans_and_rejects_malformed_responses() -> None:
-    # Given thirteen empty scans plus malformed jobs and token payloads
     empty_scans = [[page([])]] * 13
     malformed_jobs = [['{"jobs":"not-a-list"}']]
     malformed_token = [['{"jobs":[],"nextPageToken":123}']]
 
-    # When discovery evaluates each connector response
     bounded = discover_from_payloads(empty_scans, job_name="demo", run_id="run-1")
     bad_jobs = discover_from_payloads(malformed_jobs, job_name="demo", run_id="run-1")
     bad_token = discover_from_payloads(malformed_token, job_name="demo", run_id="run-1")
 
-    # Then exactly twelve scans occur and malformed data never selects a third-party job
     assert bounded.scans == 12
     assert bounded.pages == 12
     assert bad_jobs.matched_job_id is None

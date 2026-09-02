@@ -1,5 +1,4 @@
 {
-  "serviceAccount": "${_SERVICE_ACCOUNT}",
   "timeout": "1800s",
   "options": {
     "logging": "CLOUD_LOGGING_ONLY",
@@ -8,9 +7,8 @@
     "requestedVerifyOption": "VERIFIED"
   },
   "substitutions": {
-    "_REGION": "southamerica-east1",
-    "_REPOSITORY": "alfabetizacao",
-    "_SERVICE_ACCOUNT": "",
+    "_REGION": "us-central1",
+    "_REPOSITORY": "alfabetizacao-pipeline",
     "_ARTIFACT_BUCKET": ""
   },
   "steps": [
@@ -20,19 +18,9 @@
       "args": ["build", "--pull", "--file", "containers/batch.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA", "."]
     },
     {
-      "id": "push-batch",
-      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
-      "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA"]
-    },
-    {
       "id": "build-dbt",
       "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
       "args": ["build", "--pull", "--file", "containers/dbt.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt:$COMMIT_SHA", "."]
-    },
-    {
-      "id": "push-dbt",
-      "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
-      "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt:$COMMIT_SHA"]
     },
     {
       "id": "build-producer",
@@ -40,32 +28,41 @@
       "args": ["build", "--pull", "--file", "containers/producer.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer:$COMMIT_SHA", "."]
     },
     {
-      "id": "push-producer",
+      "id": "build-dataflow-template",
       "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
-      "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer:$COMMIT_SHA"]
+      "args": ["build", "--pull", "--file", "containers/dataflow.Dockerfile", "--target", "dataflow-template", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dataflow-template:$COMMIT_SHA", "."]
     },
     {
-      "id": "build-dataflow",
+      "id": "build-dataflow-sdk",
       "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
-      "args": ["build", "--pull", "--file", "containers/dataflow.Dockerfile", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dataflow:$COMMIT_SHA", "."]
+      "args": ["build", "--pull", "--file", "containers/dataflow.Dockerfile", "--target", "dataflow-sdk", "--tag", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dataflow-sdk:$COMMIT_SHA", "."]
     },
     {
-      "id": "push-dataflow",
+      "id": "build-reference-schemas",
       "name": "gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311",
-      "args": ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dataflow:$COMMIT_SHA"]
+      "entrypoint": "bash",
+      "env": ["BATCH_IMAGE=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA"],
+      "args": ["cloudbuild/build-reference-schemas.sh"]
     },
     {
-      "id": "capture-digests",
+      "id": "publish-reference-schemas",
       "name": "gcr.io/google.com/cloudsdktool/google-cloud-cli@sha256:016179f3641ec13de55083342cb6b2018c7ead2e5eefbaff74db14f7d587b5f1",
       "entrypoint": "bash",
-      "env": ["REGION=${_REGION}", "REPOSITORY=${_REPOSITORY}", "PROJECT_ID=$PROJECT_ID", "COMMIT_SHA=$COMMIT_SHA", "BUILD_ID=$BUILD_ID"],
-      "args": ["cloudbuild/capture-digests.sh"]
+      "env": ["ARTIFACT_BUCKET=${_ARTIFACT_BUCKET}", "COMMIT_SHA=$COMMIT_SHA"],
+      "args": ["cloudbuild/publish-reference-schemas.sh"]
     }
+  ],
+  "images": [
+    "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/batch:$COMMIT_SHA",
+    "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dbt:$COMMIT_SHA",
+    "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/producer:$COMMIT_SHA",
+    "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dataflow-template:$COMMIT_SHA",
+    "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/dataflow-sdk:$COMMIT_SHA"
   ],
   "artifacts": {
     "objects": {
       "location": "gs://${_ARTIFACT_BUCKET}/builds/$BUILD_ID",
-      "paths": ["/workspace/image-digests.json"]
+      "paths": ["reference-schema-uris.tfvars.json"]
     }
   }
 }

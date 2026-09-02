@@ -3,14 +3,14 @@ with bronze as (
 )
 
 select
-    safe_cast(ano as int64) as ano,
-    lpad(trim(id_municipio), 7, '0') as id_municipio,
+    {{ safe_cast('ano', 'int64') }} as ano,
+    {{ normalize_municipality_id('id_municipio') }} as id_municipio,
     trim(serie) as serie,
-    lower(trim(rede)) as rede,
-    safe_cast(taxa_alfabetizacao as numeric) as taxa_alfabetizacao,
-    safe_cast(media_portugues as numeric) as media_portugues,
+    {{ normalize_network('rede', 'assessment_result') }} as rede,
+    {{ safe_cast('taxa_alfabetizacao', 'numeric') }} as taxa_alfabetizacao,
+    {{ safe_cast('media_portugues', 'numeric') }} as media_portugues,
     {% for nivel in range(9) %}
-        safe_cast(proporcao_aluno_nivel_{{ nivel }} as numeric)
+        {{ safe_cast('proporcao_aluno_nivel_' ~ nivel, 'numeric') }}
             as proporcao_aluno_nivel_{{ nivel }},
     {% endfor %}
     release_id,

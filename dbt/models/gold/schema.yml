@@ -11,10 +11,21 @@ models:
         description: Percentual oficial de alfabetização.
         data_tests: [not_null]
   - name: comparativo_meta_resultado
-    description: Comparação anual com a meta municipal de referência mais recente disponível.
+    description: Metas anuais municipais, estaduais e nacionais, comparadas ao resultado quando ele já existe.
     tests:
       - unique_key:
-          arguments: {columns: [release_id, ano_resultado, nivel_geografico, id_geografia, rede]}
+          arguments: {columns: [release_id, ano_meta, nivel_geografico, id_geografia, rede]}
+    columns:
+      - name: ano_meta
+        description: Ano da meta; define o grão temporal e a partição da linha.
+      - name: ano_resultado
+        description: Ano do resultado observado; permanece nulo enquanto a meta for futura.
+      - name: nome_geografia
+        description: Nome canônico do município ou identificador legível da UF ou do Brasil.
+      - name: taxa_resultado
+        description: Taxa observada; nula quando ainda não existe resultado para o ano da meta.
+      - name: status_meta
+        description: Situação da meta medida; nula enquanto não houver resultado.
   - name: evolucao_alfabetizacao
     description: Evolução anual e variação em pontos percentuais por município e rede.
     tests:
@@ -22,16 +33,6 @@ models:
           arguments: {columns: [release_id, ano, id_municipio, rede]}
   - name: indicador_atual_hibrido
     description: Visão atual que sobrepõe somente simulações posteriores à promoção oficial.
-
-exposures:
-  - name: painel_indicador_743
-    type: dashboard
-    maturity: high
-    url: https://lookerstudio.google.com/
-    description: Superfície analítica do Indicador 743, sem dados individuais.
-    depends_on:
-      - ref('indicador_atual_hibrido')
-      - ref('comparativo_meta_resultado')
-    owner:
-      name: Equipe Tech Challenge
-      email: dados@example.invalid
+    columns:
+      - name: correlation_id
+        description: Identificador da execução simulada; nulo quando prevalece o dado oficial.

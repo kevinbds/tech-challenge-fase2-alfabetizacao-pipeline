@@ -1,6 +1,7 @@
 {{ config(
   materialized='incremental',
-  incremental_strategy='insert_overwrite',
+  full_refresh=false,
+  incremental_strategy='merge',
   unique_key=['release_id', 'ano', 'id_municipio', 'rede'],
   partition_by={'field': 'ano_particao', 'data_type': 'date', 'granularity': 'year'},
   cluster_by=['release_id', 'id_municipio', 'rede']
@@ -28,6 +29,3 @@ select
 from {{ ref('silver_municipio') }} as m
 inner join {{ source('diretorios', 'municipio') }} as d on m.id_municipio = d.id_municipio
 where m.release_id = '{{ var("release_id") }}'
-{% if is_incremental() %}
-and m.ano_particao in (select distinct ano_particao from {{ ref('silver_municipio') }} where release_id = '{{ var("release_id") }}')
-{% endif %}

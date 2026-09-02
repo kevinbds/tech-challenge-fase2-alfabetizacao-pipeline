@@ -12,15 +12,12 @@ import pytest
     ],
 )
 def test_specialized_image_when_dockerfile_is_parsed(name: str, entrypoint: str) -> None:
-    # Given: one specialized runtime image contract.
     instructions = Path(f"containers/{name}.Dockerfile").read_text(encoding="utf-8").splitlines()
 
-    # When: Docker instructions are classified.
     from_lines = [line for line in instructions if line.startswith("FROM ")]
     entrypoints = [line for line in instructions if line.startswith("ENTRYPOINT ")]
     users = [line for line in instructions if line.startswith("USER ")]
 
-    # Then: the image is multi-stage, digest-pinned, locked and non-root.
     assert len(from_lines) == 2
     assert all("@sha256:" in line for line in from_lines)
     assert all(":latest" not in line for line in from_lines)
@@ -31,18 +28,46 @@ def test_specialized_image_when_dockerfile_is_parsed(name: str, entrypoint: str)
 
 
 def test_container_contract_when_manifest_is_loaded() -> None:
-    # Given: the smoke contract which distinguishes image and command failures.
     text = Path("containers/smoke-contract.json").read_text(encoding="utf-8")
 
-    # When/Then: both failure classes and digest enforcement are explicit machine fields.
-    assert '"image_unavailable_exit": 125' in text
-    assert '"command_missing_exit": 127' in text
     assert '"digest_required": true' in text
+    assert '"timeout_seconds": 60' in text
+    assert '"dataflow_template"' in text
+    assert '"entrypoint": ["/opt/google/dataflow/python_template_launcher"]' in text
+    assert '"dataflow_sdk"' in text
+    assert '"entrypoint": ["/opt/apache/beam/boot"]' in text
+
+
+def test_dataflow_image_exposes_distinct_final_role_targets() -> None:
+    instructions = Path("containers/dataflow.Dockerfile").read_text(encoding="utf-8")
+
+    assert "AS dataflow-template" in instructions
+    assert 'ENTRYPOINT ["/opt/google/dataflow/python_template_launcher"]' in instructions
+    assert "AS dataflow-sdk" in instructions
+    assert 'ENTRYPOINT ["/opt/apache/beam/boot"]' in instructions
 
 
 def test_producer_image_when_fixture_is_required_at_runtime() -> None:
-    # Given: the producer publishes the versioned deterministic fixture.
     instructions = Path("containers/producer.Dockerfile").read_text(encoding="utf-8")
 
-    # When/Then: the runtime image materializes that fixture under its declared path.
     assert "contracts/events/fixtures/demo.json" in instructions
+
+
+def test_runtime_assets_remain_in_the_docker_build_context() -> None:
+    ignored_paths = {
+        line.strip()
+        for line in Path(".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+
+    assert {"contracts", "dbt"}.isdisjoint(ignored_paths)
+
+
+def test_dbt_local_artifacts_are_excluded_from_runtime_images() -> None:
+    ignored_paths = {
+        line.strip()
+        for line in Path(".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+
+    assert {"dbt/target", "dbt/logs", "dbt/.user.yml"}.issubset(ignored_paths)

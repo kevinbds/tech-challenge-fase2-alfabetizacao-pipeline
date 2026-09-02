@@ -24,7 +24,6 @@ config_app = typer.Typer(
 app.add_typer(config_app, name="config")
 app.add_typer(batch_app, name="batch")
 app.add_typer(release_app, name="release")
-app.add_typer(release_app, name="releases")
 app.add_typer(schema_reference_app, name="schema-reference")
 
 

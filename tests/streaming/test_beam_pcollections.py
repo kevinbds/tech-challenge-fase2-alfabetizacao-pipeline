@@ -35,10 +35,8 @@ with TestPipeline() as pipeline:
 
 
 def test_beam_routes_avro_and_semantic_validation_inside_real_pcollections() -> None:
-    # Given ten schema-compatible messages, including duplicate and semantic invalid
     fixture = Path("contracts/events/fixtures/demo.json")
 
-    # When a real Beam TestPipeline applies the production DoFn and side outputs
     program = "import sys\nimport apache_beam as beam\n" + TEST_PIPELINE_PROGRAM
     completed = subprocess.run(
         [sys.executable, "-c", program, str(fixture)],
@@ -48,5 +46,4 @@ def test_beam_routes_avro_and_semantic_validation_inside_real_pcollections() -> 
         timeout=120,
     )
 
-    # Then nine staging records and one typed quarantine record are observed
     assert completed.returncode == 0, completed.stderr

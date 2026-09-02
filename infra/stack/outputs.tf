@@ -21,6 +21,7 @@ output "security_contract" {
     bronze_student_dataset       = module.data.dataset_ids["bronze_restricted"]
     bronze_batch_can_delete      = false
     deletion_protection          = var.deletion_protection
+    gold_consumer_principals     = sort(tolist(var.gold_consumer_principals))
   }
 }
 
@@ -47,6 +48,10 @@ output "batch_workflow_contract" {
   value       = module.runtime.batch_workflow_source
 }
 
+output "flex_template_contract" {
+  value = module.runtime.flex_template_content
+}
+
 output "runtime_contract" {
   value = {
     scheduler             = module.runtime.scheduler_contract
@@ -57,6 +62,9 @@ output "runtime_contract" {
     dataflow_experiments  = ["enable_portable_runner"]
     permanent_job_count   = local.permanent_dataflow_job_count
     storage_force_destroy = module.storage.force_destroy
+    data_location         = var.data_location
+    storage_location      = var.storage_location
+    compute_region        = var.region
   }
 }
 
@@ -90,6 +98,15 @@ output "lifecycle_contracts" {
   value = module.storage.lifecycle_contracts
 }
 
-output "silver_alunos_partition_expiration_ms" {
-  value = module.data.silver_alunos_partition_expiration_ms
+output "storage_retention_contracts" {
+  value = module.storage.retention_contracts
+}
+
+output "release_data_contract" {
+  value = module.data.release_contract
+}
+
+output "gold_authorized_views_contract" {
+  description = "Autoriza somente as views publicadas em Gold a ler as bases candidatas internas."
+  value       = module.data.gold_authorized_views_contract
 }

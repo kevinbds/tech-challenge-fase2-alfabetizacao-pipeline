@@ -1,27 +1,34 @@
 flowchart TB
   subgraph trust0["Fronteira externa: fontes e publicação"]
     bd["Base dos Dados<br/>BigQuery público"]
-    producer["Produtor de simulação<br/>service account dedicada"]
+    consumers["Consumidores autorizados<br/>viewer somente no Gold"]
   end
 
   subgraph trust1["Projeto GCP: dados restritos"]
+    producer["Produtor de simulação<br/>producer-sa"]
     workflow["Workflows<br/>workflow-sa"]
     batch["Cloud Run Job Batch<br/>batch-sa"]
     landing["GCS landing<br/>7 dias; restrito"]
     bronze["GCS Bronze Parquet<br/>imutável"]
+    control["GCS controle<br/>manifests; 730 dias"]
     raw["GCS raw Avro<br/>30 dias"]
     quarantine["BigQuery quarentena<br/>30 dias"]
+    streamrate["silver.municipal_rate_stream<br/>Dataflow"]
+    streamlatest["ops.stream_latest<br/>dbt"]
+    audit["Auditoria de duplicidade<br/>dbt / BigQuery ops"]
     silverr["Silver restrito<br/>contém id_aluno"]
+    quality["Qualidade de alunos<br/>dbt"]
     silver["Silver agregado"]
     gold["Gold e views estáveis<br/>sem id_aluno"]
     ops["ops.active_release<br/>ponteiro transacional"]
     topic["Pub/Sub topic<br/>Avro v1"]
+    archive["Assinatura de exportação<br/>archive-sa"]
     dataflow["Dataflow Beam<br/>dataflow-worker"]
   end
 
   subgraph trust2["Controle e observabilidade"]
     scheduler["Cloud Scheduler<br/>scheduler-sa"]
-    monitor["Cloud Monitoring<br/>SLOs e alertas"]
+    monitor["Cloud Monitoring<br/>métricas e alertas"]
     budget["Budget<br/>aviso, não hard cap"]
     registry["Artifact Registry<br/>digests imutáveis"]
   end
@@ -30,20 +37,26 @@ flowchart TB
   workflow --> batch
   bd --> batch
   batch --> landing --> bronze
-  bronze --> silverr --> silver --> gold
-  gold --> ops
-  producer --> topic --> dataflow
-  dataflow --> raw
+  batch --> control
+  bronze --> silver
+  bronze --> silverr --> quality
+  silver --> gold
+  gold -. promoção .-> ops
+  ops -. filtro da release ativa .-> gold
+  producer --> topic
+  topic --> archive --> raw
+  topic --> dataflow
   dataflow --> quarantine
-  dataflow --> silver
+  dataflow --> streamrate --> streamlatest
+  streamrate --> audit
+  streamlatest -. overlay .-> gold
+  gold --> consumers
   registry --> batch
   registry --> dataflow
   batch --> monitor
   dataflow --> monitor
-  monitor --> budget
 
   classDef restricted fill:#fce7f3,stroke:#9d174d,color:#500724
   classDef published fill:#dcfce7,stroke:#166534,color:#052e16
-  class landing,bronze,raw,quarantine,silverr restricted
-  class gold,ops published
-
+  class landing,bronze,control,raw,quarantine,silverr restricted
+  class gold,consumers published

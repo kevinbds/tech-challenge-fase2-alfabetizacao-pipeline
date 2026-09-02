@@ -1,0 +1,94 @@
+{
+  "timeout": "900s",
+  "options": {
+    "logging": "CLOUD_LOGGING_ONLY",
+    "requestedVerifyOption": "VERIFIED"
+  },
+  "substitutions": {
+    "_BATCH_IMAGE": "invalid.example/batch@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "_DBT_IMAGE": "invalid.example/dbt@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "_PRODUCER_IMAGE": "invalid.example/producer@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "_DATAFLOW_TEMPLATE_IMAGE": "invalid.example/dataflow-template@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "_DATAFLOW_SDK_IMAGE": "invalid.example/dataflow-sdk@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "_ARTIFACT_BUCKET": "",
+    "_GIT_SHA": "0000000000000000000000000000000000000000"
+  },
+  "steps": [
+    {
+      "id": "smoke-batch-help",
+      "name": "${_BATCH_IMAGE}",
+      "args": ["--help"]
+    },
+    {
+      "id": "smoke-dbt-version",
+      "name": "${_DBT_IMAGE}",
+      "args": ["--version"]
+    },
+    {
+      "id": "smoke-dbt-parse",
+      "name": "${_DBT_IMAGE}",
+      "args": ["parse", "--project-dir", "/app/project/dbt", "--profiles-dir", "/app/project/dbt", "--target", "offline"]
+    },
+    {
+      "id": "smoke-producer-help",
+      "name": "${_PRODUCER_IMAGE}",
+      "args": ["--help"]
+    },
+    {
+      "id": "smoke-dataflow-template-launcher",
+      "name": "${_DATAFLOW_TEMPLATE_IMAGE}",
+      "args": ["--help"]
+    },
+    {
+      "id": "smoke-dataflow-template-python",
+      "name": "${_DATAFLOW_TEMPLATE_IMAGE}",
+      "entrypoint": "python",
+      "args": [
+        "-c",
+        "import apache_beam; import beam_entrypoint; assert apache_beam.__version__ == '2.75.0'"
+      ]
+    },
+    {
+      "id": "smoke-dataflow-sdk-boot",
+      "name": "${_DATAFLOW_SDK_IMAGE}",
+      "args": ["--help"]
+    },
+    {
+      "id": "smoke-dataflow-sdk-python",
+      "name": "${_DATAFLOW_SDK_IMAGE}",
+      "entrypoint": "python",
+      "args": [
+        "-c",
+        "import apache_beam; import beam_entrypoint; assert apache_beam.__version__ == '2.75.0'"
+      ]
+    },
+    {
+      "id": "write-runtime-smoke-report",
+      "name": "gcr.io/google.com/cloudsdktool/google-cloud-cli@sha256:016179f3641ec13de55083342cb6b2018c7ead2e5eefbaff74db14f7d587b5f1",
+      "entrypoint": "bash",
+      "env": [
+        "BUILD_ID=$BUILD_ID",
+        "GIT_SHA=${_GIT_SHA}",
+        "BATCH_IMAGE=${_BATCH_IMAGE}",
+        "DBT_IMAGE=${_DBT_IMAGE}",
+        "PRODUCER_IMAGE=${_PRODUCER_IMAGE}",
+        "TEMPLATE_IMAGE=${_DATAFLOW_TEMPLATE_IMAGE}",
+        "SDK_IMAGE=${_DATAFLOW_SDK_IMAGE}"
+      ],
+      "args": [
+        "-ceu",
+        "umask 077; exec \"$@\" > /workspace/runtime-smoke.json",
+        "runtime-smoke-report",
+        "python3",
+        "-c",
+        "import json,os; v=os.environ; print(json.dumps(dict(build_id=v['BUILD_ID'],git_sha=v['GIT_SHA'],overall='passed',images=[v[k] for k in ('BATCH_IMAGE','DBT_IMAGE','PRODUCER_IMAGE','TEMPLATE_IMAGE','SDK_IMAGE')])))"
+      ]
+    }
+  ],
+  "artifacts": {
+    "objects": {
+      "location": "gs://${_ARTIFACT_BUCKET}/runtime-smoke/$BUILD_ID",
+      "paths": ["runtime-smoke.json"]
+    }
+  }
+}

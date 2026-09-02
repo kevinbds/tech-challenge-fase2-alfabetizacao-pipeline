@@ -1,15 +1,17 @@
 project_id         = "seu-projeto-gcp"
 billing_account_id = "000000-000000-000000"
 data_location      = "PREENCHA_COM_OUTPUT_DO_BOOTSTRAP"
-region             = "southamerica-east1"
+storage_location   = "us-central1"
+region             = "us-central1"
 name_prefix        = "fiap-fase2"
 
 artifacts_bucket_name = "seu-projeto-gcp-fiap-fase2-artifacts"
 
-batch_image    = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/batch@sha256:SUBSTITUA"
-dbt_image      = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dbt@sha256:SUBSTITUA"
-producer_image = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/producer@sha256:SUBSTITUA"
-dataflow_image = "us-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dataflow@sha256:SUBSTITUA"
+batch_image             = "us-central1-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/batch@sha256:SUBSTITUA"
+dbt_image               = "us-central1-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dbt@sha256:SUBSTITUA"
+producer_image          = "us-central1-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/producer@sha256:SUBSTITUA"
+dataflow_template_image = "us-central1-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dataflow-template@sha256:SUBSTITUA"
+dataflow_sdk_image      = "us-central1-docker.pkg.dev/PROJETO/alfabetizacao-pipeline/dataflow-sdk@sha256:SUBSTITUA"
 release_git_sha = "0123456789abcdef0123456789abcdef01234567" # substitua pelo git_sha emitido pelo Cloud Build
 
 reference_schema_uris = {
@@ -22,6 +24,8 @@ reference_schema_uris = {
 }
 
 scheduler_enabled = false
+batch_reference_year = null # defina antes de habilitar o Scheduler
+stream_release_year  = 2024 # ano fixo da fixture, conciliado ao recorte oficial
 runtime_entrypoints_verified = false # altere somente após o gate de integração dos containers
 batch_command               = ["alfabetizacao"]
 batch_args                  = ["batch", "run", "--source", "municipio", "--year", "2024", "--dry-run", "--format", "json"]

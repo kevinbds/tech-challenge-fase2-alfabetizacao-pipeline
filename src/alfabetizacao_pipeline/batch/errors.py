@@ -91,6 +91,17 @@ class InvalidTableIdentifierError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
+class InvalidReferenceYearError(Exception):
+    """Reference year is not a strict integer in the supported historical range."""
+
+    value_type: str
+
+    @override
+    def __str__(self) -> str:
+        return f"ano de referência inválido ({self.value_type}); use um inteiro entre 2000 e 2100"
+
+
+@dataclass(frozen=True, slots=True)
 class SourceInspectionRequiredError(Exception):
     """A query was attempted before discovering its runtime location."""
 

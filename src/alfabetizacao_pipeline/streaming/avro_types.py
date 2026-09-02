@@ -1,8 +1,10 @@
-from typing import ClassVar
+from datetime import timedelta
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from alfabetizacao_pipeline.streaming.avro_codec import AvroRecord
+from alfabetizacao_pipeline.streaming.models import UtcDateTime
 
 
 class AvroTransportRecord(BaseModel):
@@ -48,3 +50,29 @@ class DemoFixture(BaseModel):
 
     accepted: tuple[AvroTransportRecord, ...]
     schema_incompatible: dict[str, str | int | float | bool | None]
+
+
+class ReleaseContext(BaseModel):
+    """Ano de negócio e relógio UTC usados por uma execução do demo."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
+
+    target_year: Annotated[int, Field(ge=2000, le=2100)]
+    base_time: UtcDateTime
+    correlation_id: Annotated[str | None, Field(min_length=1, max_length=128)] = None
+
+
+def accepted_records_for_release(
+    fixture: DemoFixture, release: ReleaseContext
+) -> tuple[AvroRecord, ...]:
+    """Aplica ano, tempo e correlação da execução sem alterar a ordem da fixture."""
+    prepared: list[AvroRecord] = []
+    for index, record in enumerate(fixture.accepted, start=1):
+        avro_record = record.as_avro_record()
+        avro_record["ano"] = release.target_year
+        event_time = release.base_time + timedelta(seconds=index)
+        avro_record["event_time"] = event_time.isoformat().replace("+00:00", "Z")
+        if release.correlation_id is not None:
+            avro_record["correlation_id"] = release.correlation_id
+        prepared.append(avro_record)
+    return tuple(prepared)

@@ -76,9 +76,16 @@ def encode_event(record: AvroRecord) -> bytes:
 def decode_event(payload: bytes) -> MunicipalLiteracyRateUpdatedV1:
     """Converte bytes Avro em um evento semanticamente válido."""
     try:
-        decoded = _fastavro.schemaless_reader(io.BytesIO(payload), _fastavro.parse_schema(SCHEMA))
-        return MunicipalLiteracyRateUpdatedV1.model_validate(decoded)
+        return MunicipalLiteracyRateUpdatedV1.model_validate(decode_transport_record(payload))
     except (TypeError, ValueError, KeyError, EOFError, ValidationError) as error:
         raise AvroContractError(
             reason="payload Avro inválido ou semanticamente incompatível"
         ) from error
+
+
+def decode_transport_record(payload: bytes) -> AvroRecord:
+    """Desserializa somente o envelope Avro, antes das regras semânticas."""
+    try:
+        return _fastavro.schemaless_reader(io.BytesIO(payload), _fastavro.parse_schema(SCHEMA))
+    except (TypeError, ValueError, KeyError, EOFError) as error:
+        raise AvroContractError(reason="payload Avro estruturalmente inválido") from error

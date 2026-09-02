@@ -10,7 +10,7 @@ YAMLLINT_VERSION: Final = "yamllint==1.37.1"
 
 @dataclass(frozen=True, slots=True)
 class MissingYamlPathError(Exception):
-    """Raised when a required YAML configuration directory is absent."""
+    """Carry the missing configuration path without parsing an error message."""
 
     path: Path
 
@@ -20,7 +20,7 @@ class MissingYamlPathError(Exception):
 
 
 def select_yaml_paths(root: Path) -> tuple[Path, ...]:
-    """Select required directories and an optional integrated workflows directory."""
+    """Require core configuration roots while accepting the workflow extension."""
     required = tuple(root / name for name in REQUIRED_PATHS)
     for path in required:
         if not path.is_dir():
@@ -30,7 +30,7 @@ def select_yaml_paths(root: Path) -> tuple[Path, ...]:
 
 
 def run_yaml_lint(root: Path) -> int:
-    """Run the pinned linter against every currently applicable YAML surface."""
+    """Invoke the pinned linter only with repository-derived arguments."""
     config_path = root / ".yamllint.yml"
     paths = select_yaml_paths(root)
     command = (
@@ -48,7 +48,7 @@ def run_yaml_lint(root: Path) -> int:
 
 
 def main() -> NoReturn:
-    """Exit with yamllint's exact process outcome for CI consumption."""
+    """Propagate yamllint's exact process outcome to CI."""
     raise SystemExit(run_yaml_lint(Path.cwd()))
 
 

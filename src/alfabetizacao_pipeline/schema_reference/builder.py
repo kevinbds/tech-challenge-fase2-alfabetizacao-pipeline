@@ -32,7 +32,7 @@ def build_reference_file(
     contract: SourceContract,
     output: Path,
 ) -> ReferenceSchemaDescriptor:
-    """Write a zero-row Snappy Parquet schema artifact and its GCS descriptor."""
+    """Write a zero-row Snappy Parquet schema artifact and local descriptor."""
     arrow_schema = pa.schema([_arrow_field(column) for column in contract.columns])
     table = pa.Table.from_batches([], schema=arrow_schema)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -43,10 +43,26 @@ def build_reference_file(
         source=contract.name,
         schema_hash=digest,
         local_path=output,
-        reference_file_schema_uri=(
-            f"gs://artifacts/reference-schemas/{contract.name}/{digest}.parquet"
-        ),
     )
+
+
+def build_demo_file(contract: SourceContract, output: Path, *, year: int) -> None:
+    """Write one typed row for the local end-to-end Batch demonstration."""
+    schema = pa.schema([_arrow_field(column) for column in contract.columns])
+    default_values: dict[BigQueryType, int | float | str] = {
+        BigQueryType.INT64: 1,
+        BigQueryType.FLOAT64: 1.0,
+        BigQueryType.STRING: "demo",
+    }
+    values: dict[str, list[int | float | str]] = {}
+    for column in contract.columns:
+        if column.name == "ano":
+            values[column.name] = [year]
+            continue
+        values[column.name] = [default_values[column.data_type]]
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with pq.ParquetWriter(output, schema, compression="snappy") as writer:
+        writer.write_table(pa.Table.from_pydict(values, schema=schema))
 
 
 def inspect_reference_file(path: Path) -> ReferenceSchemaInspection:

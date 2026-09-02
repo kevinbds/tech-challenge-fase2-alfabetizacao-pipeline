@@ -9,4 +9,3 @@ superfície de custo.
 Alternativas rejeitadas: usar budget como hard cap é impreciso; não medir bytes
 antes do export expõe o projeto a surpresa de faturamento. Trade-off: cap pode
 interromper execução legítima até aprovação humana.
-

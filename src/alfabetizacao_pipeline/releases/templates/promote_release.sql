@@ -7,10 +7,11 @@ declare active_registry_state_rows int64;
 declare prior_registry_rows int64;
 declare prior_registry_state_rows int64;
 declare candidate_rows int64;
-declare candidate_state_rows int64;
+declare candidate_active_replay_rows int64;
+declare candidate_promotable_rows int64;
 declare quality_rows int64;
 declare required_rules_seen int64;
-declare critical_failures int64;
+declare blocking_results int64;
 
 begin transaction;
 set active_rows
@@ -28,7 +29,6 @@ set (current_release, prior_release) = (
     where singleton_key = true
 );
 assert current_release is not null as 'active release pointer cannot be null';
-assert candidate_release != current_release as 'candidate release is already active';
 assert (
     prior_release is null or prior_release != current_release
 ) as 'active release cannot reference itself as prior';
@@ -63,14 +63,41 @@ set candidate_rows = (
     from `{{ project_id }}.ops.release_registry`
     where release_id = candidate_release
 );
-set candidate_state_rows = (
+set candidate_active_replay_rows = (
     select count(*)
     from `{{ project_id }}.ops.release_registry`
-    where release_id = candidate_release and status = 'succeeded'
+    where
+        release_id = candidate_release
+        and status = 'active'
+);
+set candidate_promotable_rows = (
+    select count(*)
+    from `{{ project_id }}.ops.release_registry` as candidate
+    where
+        candidate.release_id = candidate_release
+        and candidate.status = 'succeeded'
+        and candidate.baseline_release_id = current_release
+        and (
+            current_release = '__bootstrap__'
+            or candidate.reference_year >= (
+                select active.reference_year
+                from `{{ project_id }}.ops.release_registry` as active
+                where active.release_id = current_release and active.status = 'active'
+            )
+        )
 );
 assert (
-    candidate_rows = 1 and candidate_state_rows = 1
-) as 'candidate release must exist exactly once in succeeded state';
+    (
+        candidate_release = current_release
+        and candidate_rows = 1
+        and candidate_active_replay_rows = 1
+    )
+    or (
+        candidate_release != current_release
+        and candidate_rows = 1
+        and candidate_promotable_rows = 1
+    )
+) as 'candidate state or quality baseline differs';
 
 set quality_rows = (
     select count(*)
@@ -99,33 +126,54 @@ set required_rules_seen = (
         )
 );
 assert (
-    quality_rows = 13 and required_rules_seen = 13
+    candidate_release = current_release
+    or (quality_rows = 13 and required_rules_seen = 13)
 ) as 'candidate release must have exactly one result for each mandatory quality rule';
 
-set critical_failures = (
+set blocking_results = (
     select count(*) from `{{ project_id }}.quality.release_results`
-    where release_id = candidate_release and severity = 'critical'
+    where
+        release_id = candidate_release
+        and (
+            severity = 'critical'
+            or action in ('block_promotion', 'quarantine_and_block')
+        )
 );
-assert critical_failures = 0 as 'candidate release has critical quality failures';
+assert (
+    candidate_release = current_release or blocking_results = 0
+) as 'candidate has blocking quality results';
 
 update `{{ project_id }}.ops.active_release`
 set
-    prior_release_id = current_release,
+    prior_release_id = if(current_release = '__bootstrap__', null, current_release),
     release_id = candidate_release,
     promoted_at = current_timestamp()
 where
     singleton_key = true
+    and candidate_release != current_release
     and release_id = current_release
     and prior_release_id is not distinct from prior_release;
-assert @@row_count = 1 as 'active release pointer changed during promotion';
+assert (
+    candidate_release = current_release or @@row_count = 1
+) as 'active release pointer changed during promotion';
 
 update `{{ project_id }}.ops.release_registry`
 set status = 'active', promoted_at = current_timestamp()
-where release_id = candidate_release and status = 'succeeded';
-assert @@row_count = 1 as 'candidate registry row changed during promotion';
+where
+    candidate_release != current_release
+    and release_id = candidate_release
+    and status = 'succeeded';
+assert (
+    candidate_release = current_release or @@row_count = 1
+) as 'candidate registry row changed during promotion';
 
 update `{{ project_id }}.ops.release_registry`
 set status = 'inactive'
-where release_id = current_release and status = 'active';
-assert @@row_count = 1 as 'active registry row changed during promotion';
+where
+    candidate_release != current_release
+    and release_id = current_release
+    and status = 'active';
+assert (
+    candidate_release = current_release or @@row_count = 1
+) as 'active registry row changed during promotion';
 commit transaction;

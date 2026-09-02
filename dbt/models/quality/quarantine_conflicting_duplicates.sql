@@ -1,38 +1,27 @@
-{{ config(unique_key=['release_id', 'table_name', 'business_key_hash', 'row_hash']) }}
+{{ config(
+    incremental_strategy='merge',
+    pre_hook="{{ replace_candidate_rows() }}",
+    unique_key=['release_id', 'table_name', 'business_key_hash', 'row_hash']
+) }}
 
-with hashed as (
-    select
-        release_id,
-        source_run_id,
-        ingested_at,
-        to_hex(sha256(to_json_string(struct(ano, id_municipio, rede)))) as business_key_hash,
-        to_hex(sha256(to_json_string(struct(
-            serie, taxa_alfabetizacao, media_portugues,
-            proporcao_aluno_nivel_0, proporcao_aluno_nivel_1, proporcao_aluno_nivel_2,
-            proporcao_aluno_nivel_3, proporcao_aluno_nivel_4, proporcao_aluno_nivel_5,
-            proporcao_aluno_nivel_6, proporcao_aluno_nivel_7, proporcao_aluno_nivel_8
-        )))) as row_hash
-    from {{ ref('stg_municipio') }}
-    where release_id = '{{ var("release_id") }}'
-),
-
-conflicts as (
+with conflicts as (
     select
         *,
         count(distinct row_hash) over (
-            partition by release_id, business_key_hash
+            partition by release_id, table_name, business_key_hash
         ) as variants
-    from hashed
+    from {{ ref('duplicate_candidates') }}
 )
 
 select
     release_id,
-    'municipio' as table_name,
+    table_name,
     business_key_hash,
     row_hash,
-    source_run_id,
-    ingested_at as detected_at,
     'critical' as severity,
-    'quarantine_and_block' as action
+    'quarantine_and_block' as action,
+    max(source_run_id) as source_run_id,
+    max(ingested_at) as detected_at
 from conflicts
 where variants > 1
+group by release_id, table_name, business_key_hash, row_hash

@@ -83,16 +83,13 @@ def transport_record() -> AvroRecord:
 
 
 def test_checked_publish_serializes_before_invoking_port() -> None:
-    # Given a real Avro record and an in-memory publisher port
     publisher = PublisherFake()
     policy = PublishPolicy(timeout_seconds=7, retry_deadline_seconds=5)
 
-    # When checked publication completes
     receipt = publish_checked(
         publisher, "projects/demo/topics/literacy", transport_record(), policy
     )
 
-    # Then the port receives valid Avro and only safe correlation metadata
     assert publisher.calls == 1
     assert publisher.payload is not None
     assert decode_event(publisher.payload).id_municipio == "3550308"
@@ -102,28 +99,22 @@ def test_checked_publish_serializes_before_invoking_port() -> None:
 
 
 def test_incompatible_publish_never_invokes_port() -> None:
-    # Given an incompatible record and a publisher that records invocations
     publisher = PublisherFake()
     invalid = transport_record()
     del invalid["event_id"]
 
-    # When checked publication validates the transport boundary
     with pytest.raises(AvroContractError):
         _ = publish_checked(publisher, "projects/demo/topics/literacy", invalid, PublishPolicy())
 
-    # Then Pub/Sub was never called
     assert publisher.calls == 0
 
 
 def test_google_adapter_applies_bounded_timeout_and_retry() -> None:
-    # Given the narrow official-client surface and an explicit policy
     client = GoogleClientFake()
     adapter = GooglePubSubPublisher(client, PublishPolicy(timeout_seconds=9))
 
-    # When the adapter publishes already validated bytes
     future = adapter.publish("projects/demo/topics/literacy", b"avro", "safe-correlation")
 
-    # Then the policy and safe correlation field cross the SDK boundary
     assert future is client.future
     assert client.timeout == 9
     assert client.correlation_id == "safe-correlation"

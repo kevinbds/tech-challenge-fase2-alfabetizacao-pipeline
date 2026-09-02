@@ -56,8 +56,6 @@ def _expected() -> frozenset[tuple[str, int]]:
 def test_release_rejects_missing_duplicate_failed_and_extra_partitions(
     manifests: tuple[BatchManifest, ...],
 ) -> None:
-    # Given: an explicit six-source expected set and a non-exact manifest collection
-    # When/Then: release construction fails closed
     with pytest.raises(IncompleteRunError):
         _ = select_latest_completed(
             manifests,
@@ -68,16 +66,13 @@ def test_release_rejects_missing_duplicate_failed_and_extra_partitions(
 
 
 def test_release_accepts_exactly_one_completed_manifest_per_expected_key() -> None:
-    # Given: exactly one completed manifest for every explicit expected key
     manifests = tuple(_completed(source) for source in SOURCE_CATALOG)
-    # When: the complete release is selected
     release = select_latest_completed(
         manifests,
         "release",
         datetime(2025, 2, 1, tzinfo=UTC),
         expected_keys=_expected(),
     )
-    # Then: all six expected partitions are present exactly once
     assert {(partition.source, partition.year) for partition in release.partitions} == _expected()
 
 
@@ -88,7 +83,6 @@ def test_batch_context_rejects_blank_deployment_provenance(
     git_sha: str,
     image_digest: str,
 ) -> None:
-    # Given/When/Then: blank or whitespace provenance is rejected at the Pydantic boundary
     with pytest.raises(ValidationError):
         _ = BatchRunContext(
             landing_prefix="gs://landing",
@@ -99,14 +93,12 @@ def test_batch_context_rejects_blank_deployment_provenance(
 
 
 def test_batch_context_trims_deployment_provenance() -> None:
-    # Given/When: provenance arrives padded at the Pydantic boundary
     context = BatchRunContext(
         landing_prefix="gs://landing",
         bronze_prefix="gs://bronze",
         git_sha=" abc ",
         image_digest=" sha256:x ",
     )
-    # Then: the trusted domain values are normalized once
     assert (context.git_sha, context.image_digest) == ("abc", "sha256:x")
 
 
@@ -123,7 +115,6 @@ def test_production_cli_rejects_invalid_provenance_before_sdk_composition(
     monkeypatch: pytest.MonkeyPatch,
     environment: dict[str, str],
 ) -> None:
-    # Given: missing or blank deployment provenance and a composition trap
     composed = False
 
     def trap(
@@ -138,40 +129,32 @@ def test_production_cli_rejects_invalid_provenance_before_sdk_composition(
         raise AssertionError((git_sha, image_digest))
 
     monkeypatch.setattr(commands, "build_production_composition", trap)
-    # When: production execution crosses the CLI boundary
     result = CliRunner().invoke(
         commands.app,
         ["run", "--source", "uf", "--year", "2024", "--execute"],
         env=environment,
     )
-    # Then: the exact typed error is returned before SDK composition
     assert result.exit_code == 2
     assert result.stderr == '{"status":"invalid_deployment_provenance"}\n'
     assert composed is False
 
 
 def test_release_cli_requires_explicit_expected_sources(tmp_path: Path) -> None:
-    # Given: a manifest file containing only uf
     fixture = tmp_path / "manifests.json"
     _ = fixture.write_text("[" + _completed("uf").model_dump_json() + "]", encoding="utf-8")
-    # When: expected keys are omitted
     result = CliRunner().invoke(
         release_app,
         ["select", "--manifests", str(fixture), "--release-id", "release"],
     )
-    # Then: the CLI fails instead of producing a partial release
     assert result.exit_code == 2
 
 
 def test_root_sqlfluff_uses_offline_jinja_templater() -> None:
-    # Given: the root pyproject SQLFluff configuration
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    # When/Then: standalone lint does not require dbt project discovery
     assert pyproject["tool"]["sqlfluff"]["core"]["templater"] == "jinja"
 
 
 def test_plan_accepts_explicit_json_output_format() -> None:
-    # Given/When: the documented local plan invocation requests stable JSON explicitly
     result = CliRunner().invoke(
         commands.app,
         [
@@ -187,6 +170,5 @@ def test_plan_accepts_explicit_json_output_format() -> None:
             "1024",
         ],
     )
-    # Then: the real CLI accepts the format and emits the plan object
     assert result.exit_code == 0
     assert '"estimated_bytes":1024' in result.stdout

@@ -2,12 +2,17 @@ import os
 import re
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+
+from pydantic import TypeAdapter
+
+from alfabetizacao_pipeline.streaming.producer import ProducerReport
+
+PRODUCER_REPORT: TypeAdapter[ProducerReport] = TypeAdapter(ProducerReport)
 
 
 def test_producer_has_standalone_help_surface() -> None:
-    # Given the standalone producer module
-    # When its real CLI help is invoked
     completed = subprocess.run(
         [sys.executable, "-m", "alfabetizacao_pipeline.streaming.producer", "--help"],
         check=False,
@@ -15,17 +20,15 @@ def test_producer_has_standalone_help_surface() -> None:
         text=True,
     )
 
-    # Then the cloud/local mode boundary is explicit
     assert completed.returncode == 0
-    assert "--mode" in completed.stdout
-    assert "--topic" in completed.stdout
+    help_text = re.sub(r"\x1b\[[0-9;]*m", "", completed.stdout)
+    assert "--mode" in help_text
+    assert "--topic" in help_text
 
 
 def test_local_producer_publishes_ten_and_rejects_incompatible_before_port(tmp_path: Path) -> None:
-    # Given the deterministic fixture and an explicitly selected local mode
     report = tmp_path / "producer-report.json"
 
-    # When the standalone producer executes through its real CLI
     completed = subprocess.run(
         [
             sys.executable,
@@ -39,21 +42,24 @@ def test_local_producer_publishes_ten_and_rejects_incompatible_before_port(tmp_p
             "contracts/events/fixtures/demo.json",
             "--report",
             str(report),
+            "--year",
+            "2031",
         ],
         check=False,
         capture_output=True,
         text=True,
     )
 
-    # Then only the ten Avro-compatible records reach the publisher
     assert completed.returncode == 0, completed.stderr
-    assert report.read_text(encoding="utf-8") == (
-        '{"mode": "local", "published": 10, "schema_rejected": 1}\n'
-    )
+    report_data = PRODUCER_REPORT.validate_json(report.read_text(encoding="utf-8"))
+    assert report_data.mode == "local"
+    assert report_data.published == 10
+    assert report_data.schema_rejected == 1
+    assert report_data.target_year == 2031
+    assert datetime.fromisoformat(report_data.base_time).tzinfo == UTC
 
 
 def test_workflow_fixture_when_image_is_built_uses_copied_destination(tmp_path: Path) -> None:
-    # Given: the fixture source and destination declared by the producer image.
     dockerfile = Path("containers/producer.Dockerfile").read_text(encoding="utf-8")
     source_pattern = r"^COPY --chown=[^ ]+ (?P<source>contracts/events/fixtures/demo\.json)"
     destination_pattern = r"(?P<destination>/[^\r\n ]+)$"
@@ -71,7 +77,6 @@ def test_workflow_fixture_when_image_is_built_uses_copied_destination(tmp_path: 
     assert workflow_fixture is not None
     report = tmp_path / "producer-runtime-report.json"
 
-    # When: the copied source is exercised through the producer's real CLI.
     completed = subprocess.run(
         [
             sys.executable,
@@ -85,30 +90,30 @@ def test_workflow_fixture_when_image_is_built_uses_copied_destination(tmp_path: 
             source,
             "--report",
             str(report),
+            "--year",
+            "2031",
         ],
         check=False,
         capture_output=True,
         text=True,
     )
 
-    # Then: the image fixture is valid and the Workflow addresses that exact destination.
     assert completed.returncode == 0, completed.stderr
-    assert report.read_text(encoding="utf-8") == (
-        '{"mode": "local", "published": 10, "schema_rejected": 1}\n'
-    )
+    report_data = PRODUCER_REPORT.validate_json(report.read_text(encoding="utf-8"))
+    assert report_data.published == 10
+    assert report_data.schema_rejected == 1
+    assert report_data.target_year == 2031
     assert workflow_fixture.group("fixture") == destination
 
 
 def test_local_producer_uses_cloud_run_environment_when_options_are_omitted(
     tmp_path: Path,
 ) -> None:
-    # Given the environment injected by the Terraform Cloud Run job and Workflow override
     report = tmp_path / "producer-report.json"
     environment = os.environ.copy()
     environment["PUBSUB_TOPIC"] = "projects/demo/topics/literacy"
     environment["CORRELATION_ID"] = "integration-run"
 
-    # When the standalone producer runs without topic or correlation CLI options
     completed = subprocess.run(
         [
             sys.executable,
@@ -120,6 +125,8 @@ def test_local_producer_uses_cloud_run_environment_when_options_are_omitted(
             "contracts/events/fixtures/demo.json",
             "--report",
             str(report),
+            "--year",
+            "2031",
         ],
         check=False,
         capture_output=True,
@@ -127,6 +134,5 @@ def test_local_producer_uses_cloud_run_environment_when_options_are_omitted(
         env=environment,
     )
 
-    # Then the runtime boundary supplies every omitted required value
     assert completed.returncode == 0, completed.stderr
     assert report.is_file()

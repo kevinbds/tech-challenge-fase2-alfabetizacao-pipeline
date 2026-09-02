@@ -1,13 +1,20 @@
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Literal, Protocol
 
-from alfabetizacao_pipeline.batch.errors import SourceInspectionRequiredError
+from alfabetizacao_pipeline.batch.errors import (
+    ImmutableObjectExistsError,
+    SourceInspectionRequiredError,
+)
+from alfabetizacao_pipeline.batch.integrity import crc32c_base64
 from alfabetizacao_pipeline.batch.models import (
     BronzeObject,
-    ContentFingerprint,
     DryRunEstimate,
+    ObjectVersion,
     QueryParameter,
+    SnapshotExport,
     SourceInspection,
+    VersionedPayload,
 )
 
 
@@ -57,6 +64,15 @@ class ImmutableDownload:
 
 
 @dataclass(frozen=True, slots=True)
+class ImmutableCopy:
+    """Server-side copy pinned to the selected source generation."""
+
+    source: GcsObjectVersion
+    destination_uri: str
+    if_generation_match: Literal[0] = 0
+
+
+@dataclass(frozen=True, slots=True)
 class BigQueryAdapterConfig:
     """Pinned hashes and locator bound to one adapter instance."""
 
@@ -69,19 +85,15 @@ class BigQuerySdkBoundary(Protocol):
     """Narrow typed boundary for google-cloud-bigquery implementations."""
 
     def inspect(self, locator: SourceLocator) -> SourceInspection:
-        """Read dataset location, table provenance and INFORMATION_SCHEMA columns."""
+        """Read dataset location, table provenance and native schema metadata."""
         ...
 
     def dry_run(self, execution: QueryExecution) -> DryRunEstimate:
         """Return bytes without executing query work."""
         ...
 
-    def fingerprint(self, execution: QueryExecution) -> ContentFingerprint:
-        """Run the explicit content fingerprint query under the same cap."""
-        ...
-
-    def export(self, execution: QueryExecution) -> tuple[str, ...]:
-        """Run EXPORT DATA and return exact landing object URIs."""
+    def snapshot(self, execution: QueryExecution) -> SnapshotExport:
+        """Materialize, export and count a snapshot in one query job."""
         ...
 
 
@@ -98,6 +110,10 @@ class GcsSdkBoundary(Protocol):
 
     def upload(self, request: ImmutableUpload) -> BronzeObject:
         """Upload and return generation, CRC32C and size metadata."""
+        ...
+
+    def copy(self, request: ImmutableCopy) -> BronzeObject:
+        """Copy one source generation into a new destination object."""
         ...
 
     def list(self, prefix: str) -> tuple[GcsObjectVersion, ...]:
@@ -138,26 +154,15 @@ class BigQueryAdapter:
             QueryExecution(sql, self._required_location(), maximum_bytes_billed, parameters)
         )
 
-    def compute_fingerprint(
-        self,
-        sql: str,
-        parameters: tuple[QueryParameter, ...],
-        maximum_bytes_billed: int,
-    ) -> ContentFingerprint:
-        """Compute content identity under the configured planner ceiling."""
-        return self.sdk.fingerprint(
-            QueryExecution(sql, self._required_location(), maximum_bytes_billed, parameters)
-        )
-
-    def export(
+    def export_snapshot(
         self,
         sql: str,
         parameters: tuple[QueryParameter, ...],
         destination_uri: str,
         maximum_bytes_billed: int,
-    ) -> tuple[str, ...]:
-        """Execute export at the discovered location and authorized ceiling."""
-        return self.sdk.export(
+    ) -> SnapshotExport:
+        """Execute one atomic snapshot job at the discovered location and cap."""
+        return self.sdk.snapshot(
             QueryExecution(
                 sql,
                 self._required_location(),
@@ -182,8 +187,58 @@ class GcsObjectStore:
 
     def read(self, uri: str) -> bytes:
         """Download one landing object."""
-        return self.sdk.download(ImmutableDownload(self.sdk.stat(uri)))
+        return self.read_versioned(uri).payload
+
+    def read_versioned(self, uri: str) -> VersionedPayload:
+        """Download bytes pinned to their resolved GCS generation."""
+        version = self.sdk.stat(uri)
+        payload = self.sdk.download(ImmutableDownload(version))
+        return VersionedPayload(
+            version=ObjectVersion(
+                uri=version.uri,
+                generation=version.generation,
+                metageneration=version.metageneration,
+                payload_sha256=sha256(payload).hexdigest(),
+            ),
+            payload=payload,
+        )
+
+    def copy_immutable(self, source: ObjectVersion, destination_uri: str) -> BronzeObject:
+        """Copy the fingerprinted source generation into new Bronze storage."""
+        request = ImmutableCopy(
+            source=GcsObjectVersion(
+                uri=source.uri,
+                generation=source.generation,
+                metageneration=source.metageneration,
+            ),
+            destination_uri=destination_uri,
+        )
+        try:
+            return self.sdk.copy(request)
+        except ImmutableObjectExistsError:
+            version = self.sdk.stat(destination_uri)
+            existing = self.sdk.download(ImmutableDownload(version))
+            if sha256(existing).hexdigest() != source.payload_sha256:
+                raise
+            return BronzeObject(
+                uri=destination_uri,
+                generation=version.generation,
+                crc32c=crc32c_base64(existing),
+                size_bytes=len(existing),
+            )
 
     def write_immutable(self, uri: str, payload: bytes) -> BronzeObject:
-        """Upload a Bronze object with an unchangeable zero precondition."""
-        return self.sdk.upload(ImmutableUpload(uri=uri, payload=payload))
+        """Upload a Bronze object or reuse an identical immutable generation."""
+        try:
+            return self.sdk.upload(ImmutableUpload(uri=uri, payload=payload))
+        except ImmutableObjectExistsError:
+            version = self.sdk.stat(uri)
+            existing = self.sdk.download(ImmutableDownload(version))
+            if existing != payload:
+                raise
+            return BronzeObject(
+                uri=uri,
+                generation=version.generation,
+                crc32c=crc32c_base64(existing),
+                size_bytes=len(existing),
+            )

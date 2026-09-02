@@ -11,4 +11,3 @@
 | [007](007-privacidade-retencao.md) | privacidade e retenção |
 | [008](008-terraform-backend.md) | bootstrap Terraform e backend |
 | [009](009-finops.md) | FinOps e limites operacionais |
-

@@ -44,8 +44,18 @@ with range_rows as (
     where release_id = '{{ var("release_id") }}'
     union all
     select
-        taxa_alfabetizacao is null or taxa_alfabetizacao not between 0 and 100
-        or percentual_participacao is null or percentual_participacao not between 0 and 100
+        (
+            taxa_alfabetizacao is null
+            or taxa_alfabetizacao not between 0 and 100
+            or percentual_participacao is null
+            or percentual_participacao not between 0 and 100
+        )
+        and not coalesce(
+            ano = 2024 and sigla_uf = 'RR' and rede = 'publica'
+            and taxa_alfabetizacao is null
+            and percentual_participacao is null,
+            false
+        )
         or meta_alfabetizacao_2024 not between 0 and 100
         or meta_alfabetizacao_2025 not between 0 and 100
         or meta_alfabetizacao_2026 not between 0 and 100
@@ -66,6 +76,17 @@ with range_rows as (
         or meta_alfabetizacao_2028 not between 0 and 100
         or meta_alfabetizacao_2029 not between 0 and 100
         or meta_alfabetizacao_2030 not between 0 and 100
+    from {{ ref('silver_meta_alfabetizacao_brasil') }}
+    where release_id = '{{ var("release_id") }}'
+    union all
+    select
+        countif(
+            coalesce(
+                rede = 'publica'
+                and meta_alfabetizacao_2030 between 0 and 100,
+                false
+            )
+        ) = 0 as invalid
     from {{ ref('silver_meta_alfabetizacao_brasil') }}
     where release_id = '{{ var("release_id") }}'
 ),
@@ -118,7 +139,7 @@ rule_metrics as (
         countif(invalid) as metric_value,
         if(countif(invalid) = 0, 'pass', 'critical') as severity,
         if(countif(invalid) = 0, 'promote', 'quarantine_and_block') as action,
-        'required_rates_proportions_participation_annual_targets_optional' as details
+        'required_rates_participation_optional_targets_brasil_publica_2030_required' as details
     from range_rows
     union all
     select

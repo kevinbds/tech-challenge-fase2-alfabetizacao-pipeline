@@ -1,16 +1,18 @@
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Final
 
 import typer
 from pydantic import TypeAdapter, ValidationError
 
-from alfabetizacao_pipeline.batch.errors import IncompleteRunError
+from alfabetizacao_pipeline.batch.errors import IncompleteRunError, InvalidTableIdentifierError
 from alfabetizacao_pipeline.batch.models import BatchManifest
 from alfabetizacao_pipeline.releases.selector import select_latest_completed
 from alfabetizacao_pipeline.releases.sql import promotion_sql, rollback_sql
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
+MINIMUM_REFERENCE_YEAR: Final = 2000
+MAXIMUM_REFERENCE_YEAR: Final = 2100
 
 
 def _required_identifier(value: str | None) -> str:
@@ -18,6 +20,13 @@ def _required_identifier(value: str | None) -> str:
         typer.echo('{"status":"invalid_release_id"}', err=True)
         raise typer.Exit(code=2)
     return value
+
+
+def _reference_year(value: int) -> int:
+    if MINIMUM_REFERENCE_YEAR <= value <= MAXIMUM_REFERENCE_YEAR:
+        return value
+    typer.echo('{"status":"invalid_reference_year"}', err=True)
+    raise typer.Exit(code=2)
 
 
 @app.command("select")
@@ -58,23 +67,31 @@ def promote(
     if not dry_run:
         typer.echo('{"status":"cloud_authorization_required"}', err=True)
         raise typer.Exit(code=5)
-    typer.echo(promotion_sql(table))
+    try:
+        sql = promotion_sql(table)
+    except InvalidTableIdentifierError:
+        typer.echo('{"status":"invalid_table_identifier"}', err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(sql)
 
 
 @app.command("rollback")
 def rollback(
-    active_release_id: Annotated[str, typer.Option("--active-release-id")],
-    previous_release_id: Annotated[str | None, typer.Option("--previous-release-id")] = None,
+    reference_year: Annotated[int, typer.Option("--reference-year")],
     table: Annotated[str, typer.Option("--table")] = "project.ops.active_release",
     dry_run: Annotated[bool, typer.Option("--dry-run/--execute")] = True,
 ) -> None:
-    """Render transactional pointer rollback SQL without cloud execution."""
-    _ = _required_identifier(active_release_id)
-    _ = _required_identifier(previous_release_id)
+    """Render historical rollback SQL without cloud execution."""
+    year = _reference_year(reference_year)
     if not dry_run:
         typer.echo('{"status":"cloud_authorization_required"}', err=True)
         raise typer.Exit(code=5)
-    typer.echo(rollback_sql(table))
+    try:
+        sql = rollback_sql(table, year)
+    except InvalidTableIdentifierError:
+        typer.echo('{"status":"invalid_table_identifier"}', err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(sql)
 
 
 if __name__ == "__main__":

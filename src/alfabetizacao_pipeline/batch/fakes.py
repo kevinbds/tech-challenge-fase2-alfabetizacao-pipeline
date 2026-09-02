@@ -3,17 +3,22 @@ from datetime import UTC, datetime
 from hashlib import sha256
 
 from alfabetizacao_pipeline.batch.catalog import SOURCE_CATALOG
-from alfabetizacao_pipeline.batch.errors import ImmutableObjectExistsError
+from alfabetizacao_pipeline.batch.errors import (
+    ImmutableObjectExistsError,
+    StaleObjectGenerationError,
+)
 from alfabetizacao_pipeline.batch.integrity import crc32c_base64
 from alfabetizacao_pipeline.batch.models import (
     BatchManifest,
     BatchStatus,
     BronzeObject,
-    ContentFingerprint,
     DryRunEstimate,
+    ObjectVersion,
     QueryParameter,
+    SnapshotExport,
     SourceIdentity,
     SourceInspection,
+    VersionedPayload,
 )
 
 
@@ -23,17 +28,25 @@ class FakeBigQuery:
     def __init__(
         self,
         estimate: DryRunEstimate,
-        fingerprint: str = "fixture-fingerprint",
+        *,
+        snapshot_row_count: int = 0,
+        snapshot_uris: tuple[str, ...] = ("gs://landing/fixture.parquet",),
     ) -> None:
-        """Configure deterministic dry-run and fingerprint responses."""
+        """Configure deterministic dry-run and snapshot responses."""
         self.estimate: DryRunEstimate = estimate
-        self.fingerprint: str = fingerprint
+        self.snapshot_row_count: int = snapshot_row_count
+        self.snapshot_uris: tuple[str, ...] = snapshot_uris
         self.query_hash: str = "fixture-query-hash"
         self.schema_hash: str = "fixture-schema-hash"
         self.executed_queries: int = 0
+        self.inspect_calls: int = 0
+        self.dry_run_limits: list[int] = []
+        self.export_limits: list[int] = []
+        self.export_destinations: list[str] = []
 
     def inspect(self, source: str) -> SourceInspection:
         """Return the pinned fixture schema with discovered location metadata."""
+        self.inspect_calls += 1
         contract = SOURCE_CATALOG[source]
         return SourceInspection(
             source=source,
@@ -48,30 +61,26 @@ class FakeBigQuery:
         maximum_bytes_billed: int,
     ) -> DryRunEstimate:
         """Return the configured non-executing byte estimate."""
-        del sql, parameters, maximum_bytes_billed
+        del sql, parameters
+        self.dry_run_limits.append(maximum_bytes_billed)
         return self.estimate
 
-    def compute_fingerprint(
-        self,
-        sql: str,
-        parameters: tuple[QueryParameter, ...],
-        maximum_bytes_billed: int,
-    ) -> ContentFingerprint:
-        """Return the configured deterministic content identity."""
-        del sql, parameters, maximum_bytes_billed
-        return ContentFingerprint(row_count=10, value=self.fingerprint)
-
-    def export(
+    def export_snapshot(
         self,
         sql: str,
         parameters: tuple[QueryParameter, ...],
         destination_uri: str,
         maximum_bytes_billed: int,
-    ) -> tuple[str, ...]:
-        """Record one export and return its fixture landing URI."""
-        del sql, parameters, destination_uri, maximum_bytes_billed
+    ) -> SnapshotExport:
+        """Record one atomic snapshot export and return its objects and count."""
+        del sql, parameters
         self.executed_queries += 1
-        return ("gs://landing/fixture.parquet",)
+        self.export_limits.append(maximum_bytes_billed)
+        self.export_destinations.append(destination_uri)
+        return SnapshotExport(
+            row_count=self.snapshot_row_count,
+            object_uris=self.snapshot_uris,
+        )
 
 
 class InMemoryManifestStore:
@@ -108,20 +117,58 @@ class InMemoryObjectStore:
     def __init__(self) -> None:
         """Create an isolated empty fake bucket."""
         self.objects: dict[str, bytes] = {}
+        self.generations: dict[str, int] = {}
+        self.created_objects: int = 0
+        self.reused_objects: int = 0
 
     def seed(self, uri: str, payload: bytes) -> None:
         """Seed landing data outside the production write path."""
         self.objects[uri] = payload
+        self.generations[uri] = self.generations.get(uri, 0) + 1
 
     def read(self, uri: str) -> bytes:
         """Read one seeded object."""
         return self.objects[uri]
 
+    def read_versioned(self, uri: str) -> VersionedPayload:
+        """Return bytes with the fake's current object generation."""
+        payload = self.objects[uri]
+        return VersionedPayload(
+            version=ObjectVersion(
+                uri=uri,
+                generation=self.generations[uri],
+                metageneration=1,
+                payload_sha256=sha256(payload).hexdigest(),
+            ),
+            payload=payload,
+        )
+
+    def copy_immutable(self, source: ObjectVersion, destination_uri: str) -> BronzeObject:
+        """Reject stale sources before creating the fake destination."""
+        payload = self.objects[source.uri]
+        if (
+            self.generations[source.uri] != source.generation
+            or sha256(payload).hexdigest() != source.payload_sha256
+        ):
+            raise StaleObjectGenerationError(uri=source.uri)
+        return self.write_immutable(destination_uri, payload)
+
     def write_immutable(self, uri: str, payload: bytes) -> BronzeObject:
         """Create one object and reject an existing URI."""
-        if uri in self.objects:
-            raise ImmutableObjectExistsError(uri=uri)
+        existing = self.objects.get(uri)
+        if existing is not None:
+            if existing != payload:
+                raise ImmutableObjectExistsError(uri=uri)
+            self.reused_objects += 1
+            return BronzeObject(
+                uri=uri,
+                generation=1,
+                crc32c=crc32c_base64(existing),
+                size_bytes=len(existing),
+            )
         self.objects[uri] = payload
+        self.generations[uri] = 1
+        self.created_objects += 1
         return BronzeObject(
             uri=uri,
             generation=1,
@@ -166,6 +213,7 @@ def manifest_fixture(spec: ManifestFixtureSpec) -> BatchManifest:
         bronze_objects=(),
         started_at=datetime(2025, 1, 1, tzinfo=UTC),
         completed_at=spec.completed_at,
+        verified_at=spec.completed_at,
         git_sha=sha256(spec.run_id.encode()).hexdigest(),
         image_digest=f"sha256:{sha256(spec.source.encode()).hexdigest()}",
     )

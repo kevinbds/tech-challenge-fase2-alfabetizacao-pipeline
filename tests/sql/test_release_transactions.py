@@ -8,14 +8,15 @@ from tests.sql.bigquery_script_runner import (
     ScriptRunOptions,
     run_bigquery_script,
 )
-from tests.sql.test_evaluate_release import (
-    persist_passing_quality_results,
-    persist_quality_results,
+from tests.sql.evaluate_release_harness import persist_quality_results
+from tests.sql.release_script_harness import (
+    insert_quality_results,
+    promotion_options,
+    release_database,
 )
-from tests.sql.test_release_scripts import insert_quality_results, release_database
 
-PROMOTE = Path("sql/quality/promote_release.sql")
-ROLLBACK = Path("sql/quality/rollback_release.sql")
+PROMOTE = Path("src/alfabetizacao_pipeline/releases/templates/promote_release.sql")
+ROLLBACK = Path("src/alfabetizacao_pipeline/releases/templates/rollback_release.sql")
 
 
 def _snapshot(
@@ -77,10 +78,7 @@ def test_promotion_stale_pointer_cas_rolls_back_every_mutation() -> None:
             run_bigquery_script(
                 connection,
                 PROMOTE,
-                options=ScriptRunOptions(
-                    parameters={"release_id": "release-b"},
-                    before_statement=change_pointer,
-                ),
+                options=promotion_options("release-b", before_statement=change_pointer),
             )
         assert _snapshot(connection) == before
 
@@ -105,21 +103,18 @@ def test_promotion_intermediate_registry_failure_rolls_back_pointer() -> None:
             run_bigquery_script(
                 connection,
                 PROMOTE,
-                options=ScriptRunOptions(
-                    parameters={"release_id": "release-b"},
-                    before_statement=invalidate_candidate,
-                ),
+                options=promotion_options("release-b", before_statement=invalidate_candidate),
             )
         assert _snapshot(connection) == before
 
 
 def test_evaluate_persist_then_promote_uses_produced_catalog() -> None:
     with release_database() as connection:
-        persist_passing_quality_results(connection)
+        persist_quality_results(connection)
         run_bigquery_script(
             connection,
             PROMOTE,
-            options=ScriptRunOptions(parameters={"release_id": "release-b"}),
+            options=promotion_options("release-b"),
         )
         assert connection.execute(
             "select release_id, prior_release_id from active_release"
@@ -130,6 +125,47 @@ def test_evaluate_persist_then_promote_uses_produced_catalog() -> None:
         assert connection.execute(
             "select release_id, status from release_registry order by release_id"
         ).fetchall() == [("release-a", "inactive"), ("release-b", "active")]
+
+
+def test_first_promotion_from_bootstrap_keeps_null_predecessor_and_rollback_is_idempotent() -> None:
+    with release_database() as connection:
+        _ = connection.execute(
+            """
+            delete from release_registry where release_id = 'release-a';
+            insert into release_registry values
+                ('__bootstrap__', 'active', null, timestamp '2024-01-01',
+                 timestamp '2024-01-01', current_timestamp, null);
+            update active_release
+            set release_id = '__bootstrap__', prior_release_id = null;
+            update release_registry
+            set baseline_release_id = '__bootstrap__'
+            where release_id = 'release-b';
+            """
+        )
+        insert_quality_results(connection)
+
+        run_bigquery_script(
+            connection,
+            PROMOTE,
+            options=promotion_options("release-b"),
+        )
+
+        assert connection.execute(
+            "select release_id, prior_release_id from active_release"
+        ).fetchone() == ("release-b", None)
+        assert connection.execute(
+            "select release_id, status from release_registry order by release_id"
+        ).fetchall() == [("__bootstrap__", "inactive"), ("release-b", "active")]
+
+        run_bigquery_script(
+            connection,
+            ROLLBACK,
+            options=ScriptRunOptions(parameters={"reference_year": 2024}),
+        )
+
+        assert connection.execute(
+            "select release_id, prior_release_id from active_release"
+        ).fetchone() == ("release-b", None)
 
 
 def test_evaluate_persisted_critical_rule_blocks_promotion() -> None:
@@ -145,128 +181,6 @@ def test_evaluate_persisted_critical_rule_blocks_promotion() -> None:
             run_bigquery_script(
                 connection,
                 PROMOTE,
-                options=ScriptRunOptions(parameters={"release_id": "release-b"}),
-            )
-        assert _snapshot(connection) == before
-
-
-@pytest.mark.parametrize(
-    ("pointer_sql", "registry_sql"),
-    [
-        ("update active_release set prior_release_id = null", "select 1"),
-        ("update active_release set prior_release_id = 'release-a'", "select 1"),
-        (
-            "update active_release set release_id = null, prior_release_id = 'release-b'",
-            "update release_registry set status = 'inactive' where release_id = 'release-b'",
-        ),
-        (
-            "update active_release set release_id = 'missing', prior_release_id = 'release-b'",
-            "update release_registry set status = 'inactive' where release_id = 'release-b'",
-        ),
-        (
-            "update active_release set prior_release_id = 'release-b'",
-            (
-                "delete from release_registry where release_id = 'release-a'; "
-                "update release_registry set status = 'inactive' where release_id = 'release-b'"
-            ),
-        ),
-        (
-            "update active_release set prior_release_id = 'release-b'",
-            (
-                "update release_registry set status = 'inactive' where release_id = 'release-b'; "
-                "insert into release_registry select * from release_registry "
-                "where release_id = 'release-a'"
-            ),
-        ),
-        (
-            "update active_release set prior_release_id = 'release-b'",
-            "update release_registry set status = 'failed' where release_id = 'release-a'",
-        ),
-        ("update active_release set prior_release_id = 'missing'", "select 1"),
-        ("update active_release set prior_release_id = 'release-b'", "select 1"),
-        (
-            "update active_release set prior_release_id = 'release-b'",
-            (
-                "update release_registry set status = 'inactive' where release_id = 'release-b'; "
-                "insert into release_registry select * from release_registry "
-                "where release_id = 'release-b'"
-            ),
-        ),
-    ],
-    ids=[
-        "prior-null",
-        "self-reference",
-        "current-null",
-        "current-registry-missing",
-        "current-row-missing",
-        "current-row-duplicate",
-        "current-status-inconsistent",
-        "prior-registry-missing",
-        "prior-status-inconsistent",
-        "prior-row-duplicate",
-    ],
-)
-def test_rollback_rejects_invalid_pointer_or_registry_without_mutation(
-    pointer_sql: str, registry_sql: str
-) -> None:
-    with release_database() as connection:
-        _ = connection.execute(pointer_sql)
-        _ = connection.execute(registry_sql)
-        before = _snapshot(connection)
-        with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(connection, ROLLBACK)
-        assert _snapshot(connection) == before
-
-
-def test_rollback_stale_pointer_cas_rolls_back_every_mutation() -> None:
-    with release_database() as connection:
-        _ = connection.execute("update active_release set prior_release_id = 'release-b'")
-        _ = connection.execute(
-            "update release_registry set status = 'inactive' where release_id = 'release-b'"
-        )
-        before = _snapshot(connection)
-
-        def change_pointer(
-            statement_index: int,
-            statement: str,
-            connection: duckdb.DuckDBPyConnection,
-        ) -> None:
-            del statement_index
-            if statement.lower().startswith("update ") and "active_release" in statement:
-                _ = connection.execute("update active_release set release_id = 'release-stale'")
-
-        with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(
-                connection,
-                ROLLBACK,
-                options=ScriptRunOptions(before_statement=change_pointer),
-            )
-        assert _snapshot(connection) == before
-
-
-def test_rollback_intermediate_registry_failure_is_atomic() -> None:
-    with release_database() as connection:
-        _ = connection.execute("update active_release set prior_release_id = 'release-b'")
-        _ = connection.execute(
-            "update release_registry set status = 'inactive' where release_id = 'release-b'"
-        )
-        before = _snapshot(connection)
-
-        def invalidate_current(
-            statement_index: int,
-            statement: str,
-            connection: duckdb.DuckDBPyConnection,
-        ) -> None:
-            del statement_index
-            if statement.lower().startswith("update ") and "current_release" in statement:
-                _ = connection.execute(
-                    "update release_registry set status = 'failed' where release_id = 'release-a'"
-                )
-
-        with pytest.raises(ScriptAssertionError):
-            run_bigquery_script(
-                connection,
-                ROLLBACK,
-                options=ScriptRunOptions(before_statement=invalidate_current),
+                options=promotion_options("release-b"),
             )
         assert _snapshot(connection) == before
