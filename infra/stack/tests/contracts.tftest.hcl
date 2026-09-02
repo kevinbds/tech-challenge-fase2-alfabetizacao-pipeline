@@ -60,7 +60,7 @@ run "platform_contract" {
     error_message = "O Scheduler deve enviar o ano de referência configurado, nunca inferir o relógio."
   }
   assert {
-    condition     = output.streaming_archive_contract.max_duration == "60s" && output.streaming_archive_contract.datetime_format == "year=YYYY/month=MM/day=DD/hour=hh/mm_ssZ" && output.streaming_archive_contract.use_topic_schema && output.streaming_archive_contract.write_metadata && output.streaming_archive_contract.dead_letter_configured
+    condition     = output.streaming_archive_contract.max_duration == "60s" && output.streaming_archive_contract.datetime_format == "YYYY/MM/DD/hh_mm_ssZ" && output.streaming_archive_contract.use_topic_schema && output.streaming_archive_contract.write_metadata && output.streaming_archive_contract.dead_letter_configured
     error_message = "A assinatura GCS deve gravar Avro do schema do tópico com metadados e rotação de 60 s."
   }
   assert {
@@ -201,6 +201,14 @@ run "platform_contract" {
   assert {
     condition     = output.runtime_contract.permanent_job_count == 0 && output.runtime_contract.dataflow_min_workers == 1 && output.runtime_contract.dataflow_max_workers == 2
     error_message = "Terraform não pode iniciar job Dataflow permanente."
+  }
+  assert {
+    condition = (
+      toset(google_project_iam_custom_role.workflow_operation_reader.permissions) == toset(["run.operations.get"]) &&
+      google_project_iam_custom_role.workflow_operation_reader.role_id == "alfabetizacaoWorkflowOperationReader" &&
+      google_project_iam_member.workflow_operation_reader.project == var.project_id
+    )
+    error_message = "O Workflow precisa consultar somente a operaÃ§Ã£o assÃ­ncrona iniciada pelo Cloud Run Job."
   }
   assert {
     condition = (
@@ -530,7 +538,8 @@ run "platform_contract" {
   assert {
     condition = (
       strcontains(google_monitoring_alert_policy.stream_latency.conditions[0].condition_threshold[0].filter, "pubsub.googleapis.com/subscription/oldest_unacked_message_age") &&
-      google_monitoring_alert_policy.stream_latency.conditions[0].condition_threshold[0].threshold_value == 60 &&
+      google_monitoring_alert_policy.stream_latency.conditions[0].condition_threshold[0].comparison == "COMPARISON_GT" &&
+      google_monitoring_alert_policy.stream_latency.conditions[0].condition_threshold[0].threshold_value == 59 &&
       length(google_monitoring_alert_policy.pubsub_backlog) == 4
     )
     error_message = "Latência e backlog devem usar métricas nativas e cobrir assinaturas principais e DLQs."

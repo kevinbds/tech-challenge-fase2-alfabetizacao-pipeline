@@ -1,6 +1,8 @@
 module "runtime" {
   source = "./modules/runtime"
 
+  depends_on = [google_project_service_identity.workflows]
+
   project_id    = var.project_id
   region        = var.region
   data_location = var.data_location

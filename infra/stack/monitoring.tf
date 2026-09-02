@@ -84,8 +84,19 @@ resource "google_logging_metric" "pipeline" {
 
   metric_descriptor {
     metric_kind = "DELTA"
-    value_type  = "INT64"
+    value_type  = each.value.value_extractor == null ? "INT64" : "DISTRIBUTION"
     unit        = "1"
+  }
+
+  dynamic "bucket_options" {
+    for_each = each.value.value_extractor == null ? [] : [true]
+    content {
+      exponential_buckets {
+        growth_factor      = 2
+        num_finite_buckets = 20
+        scale              = 1
+      }
+    }
   }
 }
 
@@ -102,8 +113,8 @@ resource "google_monitoring_notification_channel" "email" {
 
 resource "google_monitoring_alert_policy" "log_failure" {
   for_each = {
-    for key, metric in google_logging_metric.pipeline : key => metric
-    if local.log_metrics[key].alert
+    for key, metric in local.log_metrics : key => metric
+    if metric.alert
   }
 
   project               = var.project_id
@@ -115,7 +126,7 @@ resource "google_monitoring_alert_policy" "log_failure" {
   conditions {
     display_name = "Ao menos uma ocorrência em cinco minutos"
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${each.value.name}\" AND resource.type=\"${local.log_metrics[each.key].resource_type}\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.pipeline[each.key].name}\" AND resource.type=\"${local.log_metrics[each.key].resource_type}\""
       duration        = "0s"
       comparison      = "COMPARISON_GT"
       threshold_value = 0
@@ -163,7 +174,7 @@ resource "google_monitoring_alert_policy" "workflow_failure" {
   conditions {
     display_name = "Batch ou demonstração de streaming falhou"
     condition_threshold {
-      filter          = "metric.type=\"workflows.googleapis.com/finished_execution_count\" AND resource.type=\"workflows.googleapis.com/Workflow\" AND metric.label.\"status\"=\"FAILED\" AND resource.label.\"location\"=\"${var.region}\" AND (resource.label.\"workflow_id\"=\"${module.runtime.workflow_names.batch}\" OR resource.label.\"workflow_id\"=\"${module.runtime.workflow_names.stream_demo}\")"
+      filter          = "metric.type=\"workflows.googleapis.com/finished_execution_count\" AND resource.type=\"workflows.googleapis.com/Workflow\" AND metric.label.\"status\"=\"FAILED\" AND resource.label.\"location\"=\"${var.region}\" AND resource.label.\"workflow_id\"=one_of(\"${module.runtime.workflow_names.batch}\", \"${module.runtime.workflow_names.stream_demo}\")"
       duration        = "0s"
       comparison      = "COMPARISON_GT"
       threshold_value = 0
@@ -188,8 +199,8 @@ resource "google_monitoring_alert_policy" "stream_latency" {
     condition_threshold {
       filter          = "resource.type=\"pubsub_subscription\" AND metric.type=\"pubsub.googleapis.com/subscription/oldest_unacked_message_age\" AND resource.label.\"subscription_id\"=\"${var.name_prefix}-dataflow\""
       duration        = "300s"
-      comparison      = "COMPARISON_GE"
-      threshold_value = 60
+      comparison      = "COMPARISON_GT"
+      threshold_value = 59
 
       aggregations {
         alignment_period   = "60s"
@@ -231,16 +242,15 @@ resource "google_monitoring_dashboard" "pipeline" {
     mosaicLayout = {
       columns = 12
       tiles = [
-        for index, chart in local.dashboard_charts : {
-          xPos   = (index % 2) * 6
-          yPos   = floor(index / 2) * 4
+        for index, chart in local.dashboard_charts : merge({
           width  = 6
           height = 4
           widget = {
             title = chart.title
             xyChart = {
               dataSets = [{
-                plotType = "LINE"
+                plotType   = "LINE"
+                targetAxis = "Y1"
                 timeSeriesQuery = {
                   timeSeriesFilter = {
                     filter = chart.filter
@@ -255,7 +265,10 @@ resource "google_monitoring_dashboard" "pipeline" {
               yAxis = { label = "valor", scale = "LINEAR" }
             }
           }
-        }
+          },
+          index % 2 == 0 ? {} : { xPos = (index % 2) * 6 },
+          floor(index / 2) == 0 ? {} : { yPos = floor(index / 2) * 4 }
+        )
       ]
     }
   })

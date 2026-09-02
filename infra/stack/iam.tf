@@ -8,6 +8,12 @@ resource "google_project_service_identity" "pubsub" {
   service  = "pubsub.googleapis.com"
 }
 
+resource "google_project_service_identity" "workflows" {
+  provider = google-beta
+  project  = var.project_id
+  service  = "workflows.googleapis.com"
+}
+
 locals {
   pubsub_service_agent = "serviceAccount:${google_project_service_identity.pubsub.email}"
   runtime_members      = { for key, account in google_service_account.runtime : key => "serviceAccount:${account.email}" }
@@ -67,6 +73,20 @@ resource "google_cloud_run_v2_job_iam_member" "workflow_job_executor" {
   name     = module.runtime.job_names[each.key]
   role     = "roles/run.jobsExecutorWithOverrides"
   member   = local.runtime_members["workflow"]
+}
+
+resource "google_project_iam_custom_role" "workflow_operation_reader" {
+  project     = var.project_id
+  role_id     = "alfabetizacaoWorkflowOperationReader"
+  title       = "Alfabetizacao Workflow Operation Reader"
+  description = "Consulta o estado das operações assíncronas iniciadas pelo Workflow"
+  permissions = ["run.operations.get"]
+}
+
+resource "google_project_iam_member" "workflow_operation_reader" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.workflow_operation_reader.name
+  member  = local.runtime_members["workflow"]
 }
 
 resource "google_project_iam_member" "runtime_artifact_reader" {
@@ -277,10 +297,10 @@ resource "google_pubsub_subscription_iam_member" "service_agent_subscriber" {
 }
 
 resource "google_pubsub_topic_iam_member" "service_agent_dlq_publisher" {
-  for_each = module.streaming.dead_letter_topic_ids
+  for_each = toset(["archive", "dataflow"])
 
   project = var.project_id
-  topic   = each.value
+  topic   = module.streaming.dead_letter_topic_ids[each.key]
   role    = "roles/pubsub.publisher"
   member  = local.pubsub_service_agent
 }

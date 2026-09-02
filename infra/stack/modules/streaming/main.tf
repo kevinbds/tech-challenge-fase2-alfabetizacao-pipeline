@@ -53,7 +53,7 @@ resource "google_pubsub_subscription" "raw_archive" {
     bucket                   = var.streaming_bucket
     filename_prefix          = "raw/"
     filename_suffix          = ".avro"
-    filename_datetime_format = "year=YYYY/month=MM/day=DD/hour=hh/mm_ssZ"
+    filename_datetime_format = "YYYY/MM/DD/hh_mm_ssZ"
     max_duration             = "60s"
     service_account_email    = var.archive_service_account_email
 
@@ -101,11 +101,11 @@ resource "google_pubsub_subscription" "dataflow" {
 }
 
 resource "google_pubsub_subscription" "dead_letter_audit" {
-  for_each = google_pubsub_topic.dead_letter
+  for_each = toset(["archive", "dataflow"])
 
   project = var.project_id
   name    = "${var.name_prefix}-${each.key}-dlq-audit"
-  topic   = each.value.id
+  topic   = google_pubsub_topic.dead_letter[each.key].id
   labels  = var.labels
 
   ack_deadline_seconds       = 60

@@ -55,10 +55,9 @@ monitoring_steps = {
     next(iter(step)): next(iter(step.values()))
     for step in workflow["wait_main_subscription_backlogs"]["steps"]
 }
-assert monitoring_steps["read_backlog_metric"]["call"] == (
-    "googleapis.monitoring.v3.projects.timeSeries.list"
-)
-assert monitoring_steps["read_backlog_metric"]["args"]["pageSize"] == 1
+assert monitoring_steps["read_backlog_metric"]["call"] == "http.get"
+assert monitoring_steps["read_backlog_metric"]["args"]["auth"] == {"type": "OAuth2"}
+assert monitoring_steps["read_backlog_metric"]["args"]["query"]["pageSize"] == 1
 """
 
 

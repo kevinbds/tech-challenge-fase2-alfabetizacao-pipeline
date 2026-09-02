@@ -13,6 +13,8 @@ module "streaming" {
     google_project_iam_member.pubsub_service_agent,
     google_storage_bucket_iam_member.archive_creator,
     google_storage_bucket_iam_member.archive_bucket_reader,
+    google_storage_bucket_iam_member.pubsub_archive_creator,
+    google_storage_bucket_iam_member.pubsub_archive_bucket_reader,
     google_service_account_iam_member.pubsub_archive_token_creator,
   ]
 }

@@ -57,10 +57,8 @@ resource "google_storage_bucket_iam_member" "archive_creator" {
   role   = "roles/storage.objectCreator"
   member = local.runtime_members["archive"]
 
-  condition {
-    title       = "raw_archive_prefix"
-    description = "Pub/Sub só cria Avro no raw"
-    expression  = "resource.name.startsWith('projects/_/buckets/${module.storage.bucket_names["streaming"]}/objects/raw/')"
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -68,6 +66,22 @@ resource "google_storage_bucket_iam_member" "archive_bucket_reader" {
   bucket = module.storage.bucket_names["streaming"]
   role   = "roles/storage.legacyBucketReader"
   member = local.runtime_members["archive"]
+}
+
+resource "google_storage_bucket_iam_member" "pubsub_archive_creator" {
+  bucket = module.storage.bucket_names["streaming"]
+  role   = "roles/storage.objectCreator"
+  member = local.pubsub_service_agent
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "google_storage_bucket_iam_member" "pubsub_archive_bucket_reader" {
+  bucket = module.storage.bucket_names["streaming"]
+  role   = "roles/storage.legacyBucketReader"
+  member = local.pubsub_service_agent
 }
 
 resource "google_storage_bucket_iam_member" "runtime_artifacts" {
