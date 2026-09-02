@@ -69,6 +69,38 @@ def test_release_registry_queries_inherit_the_runtime_byte_cap(
     assert config["query"]["maximumBytesBilled"] == "7"
 
 
+def test_begin_release_bootstrap_inserts_use_a_bigquery_row_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_sql: list[str] = []
+
+    class QueryClient:
+        def query(
+            self,
+            sql: str,
+            *,
+            location: str,
+            job_config: QueryJobConfigBoundary,
+        ) -> QueryJob:
+            del job_config
+            assert location == "US"
+            observed_sql.append(sql)
+            return QueryJob()
+
+    def query_client_factory(project: str | None = None) -> QueryClient:
+        del project
+        return QueryClient()
+
+    monkeypatch.setattr(bigquery, "Client", query_client_factory)
+
+    BigQueryReleaseStore("project", "US", maximum_bytes_billed=7).begin(
+        release_execution()
+    )
+
+    sql = observed_sql[0].lower()
+    assert sql.count("from unnest([1])") == 2
+
+
 def test_bigquery_release_mapping_persists_both_timestamp_semantics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

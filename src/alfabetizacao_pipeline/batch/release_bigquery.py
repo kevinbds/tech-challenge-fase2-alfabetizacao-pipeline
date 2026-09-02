@@ -29,12 +29,14 @@ class BigQueryReleaseStore:
             insert into `{project}.ops.release_registry`
               (release_id,status,reference_year,created_at)
             select '__bootstrap__','active',null,current_timestamp()
+            from unnest([1])
             where not exists (select 1 from `{project}.ops.active_release`)
               and not exists (select 1 from `{project}.ops.release_registry`
                 where release_id='__bootstrap__');
             insert into `{project}.ops.active_release`
               (singleton_key,release_id,prior_release_id,promoted_at)
             select true,'__bootstrap__',null,current_timestamp()
+            from unnest([1])
             where not exists (select 1 from `{project}.ops.active_release`);
             assert (select count(*) from `{project}.ops.active_release` where singleton_key)=1
               as 'active release singleton is invalid';
