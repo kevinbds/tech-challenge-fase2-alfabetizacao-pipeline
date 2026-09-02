@@ -26,8 +26,6 @@ contratos versionados do projeto.
 | código, qualidade e documentação | `src/`, `tests/`, `.github/workflows/ci.yml` e [Documentos](#documentos) | 494 testes locais; cobertura acima de 90% |
 | histórico Git, branches e PRs | histórico público, mensagens descritivas e merges preservados | evolução registrada; somente a branch de entrega `main` permanece publicada |
 
-O link do vídeo executivo será incluído aqui depois da publicação da gravação.
-
 ## Fontes oficiais
 
 As seis fontes vêm de `basedosdados.br_inep_avaliacao_alfabetizacao`:
