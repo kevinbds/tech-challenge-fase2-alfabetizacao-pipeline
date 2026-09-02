@@ -48,7 +48,7 @@ def test_batch_workflow_owns_one_release_and_waits_through_native_connector_lro(
     assert 'action == "rollback"' in serialized
     assert serialized.count("next: validate_year") == 2
     assert "next: route_action" in serialized
-    assert 'json.encode_to_string({"reference_year": year})' in serialized
+    assert '"{\\"reference_year\\":" + json.encode_to_string(year) + "}"' in serialized
     assert "action: rollback" in serialized
     assert "year: $${year}" in serialized
 

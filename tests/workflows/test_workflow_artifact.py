@@ -128,6 +128,7 @@ def test_cleanup_dataflow_graph_bounds_discovery_and_cancels_only_unique_match()
     discovery_values = _assigned_values(cleanup_steps["init_discovery"])
     page_values = _assigned_values(cleanup_steps["init_page_scan"])
     page_routes = _routes(cleanup_steps["guard_next_page"])
+    candidate_values = _assigned_values(cleanup_steps["inspect_candidate_labels"])
     candidate_routes = _routes(cleanup_steps["candidate_matches"])
     unique_routes = _routes(cleanup_steps["choose_unique_match"])
     retry_routes = _routes(cleanup_steps["retry_discovery"])
@@ -165,6 +166,7 @@ def test_cleanup_dataflow_graph_bounds_discovery_and_cancels_only_unique_match()
         "${page_count >= 10}": "retry_discovery",
     }
     assert cleanup_steps["guard_next_page"]["next"] == "advance_page"
+    assert candidate_values["candidate_labels"] == '${default(map.get(candidate, "labels"), json.decode("{}"))}'
     (candidate_condition,) = candidate_routes
     assert candidate_routes[candidate_condition] == "classify_match"
     assert "candidate.name == job_name" in candidate_condition

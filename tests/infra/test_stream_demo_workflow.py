@@ -109,7 +109,8 @@ def test_stream_demo_uses_fixed_correlated_queries_and_monitoring_signals() -> N
         JSON_MAPPING.validate_python(_workflow()["wait_main_subscription_backlogs"])
     )
     backlog_args = JSON_MAPPING.validate_python(primary_by_name["read_backlog_metric"]["args"])
-    backlog_filter = str(backlog_args["filter"])
+    backlog_query = JSON_MAPPING.validate_python(backlog_args["query"])
+    backlog_filter = str(backlog_query["filter"])
     query_body = JSON_MAPPING.validate_python(
         JSON_MAPPING.validate_python(
             _steps(JSON_MAPPING.validate_python(_workflow()["wait_bigquery_count"]))["query_count"][
@@ -129,9 +130,9 @@ def test_stream_demo_uses_fixed_correlated_queries_and_monitoring_signals() -> N
     assert primary_by_name["verify_subscription_exists"]["call"] == (
         "googleapis.pubsub.v1.projects.subscriptions.get"
     )
-    assert primary_by_name["read_backlog_metric"]["call"] == (
-        "googleapis.monitoring.v3.projects.timeSeries.list"
-    )
+    assert primary_by_name["read_backlog_metric"]["call"] == "http.get"
+    assert backlog_args["auth"] == {"type": "OAuth2"}
+    assert backlog_args["url"] == '${"https://monitoring.googleapis.com/v3/projects/" + project_id + "/timeSeries"}'
     assert "pubsub.googleapis.com/subscription/num_undelivered_messages" in backlog_filter
     assert primary_by_name["require_time_series"] == {
         "switch": [{"condition": "${len(time_series) == 0}", "next": "retry_or_fail"}]
@@ -156,6 +157,7 @@ def test_stream_demo_scans_dead_letter_metric_pages_after_visibility_barrier() -
     dead_letter_args = JSON_MAPPING.validate_python(
         dead_letter_by_name["read_dead_letter_metric"]["args"]
     )
+    dead_letter_query = JSON_MAPPING.validate_python(dead_letter_args["query"])
     dead_letter_init = _assignments(dead_letter_by_name["init"])
     metric_page_assign = JSON_STEPS.validate_python(
         dead_letter_by_name["capture_metric_page"]["assign"]
@@ -167,11 +169,11 @@ def test_stream_demo_scans_dead_letter_metric_pages_after_visibility_barrier() -
     assert wait_dead_letter_args["dlq_metric_subscription_ids"] == (
         "${[backlog_subscription_ids[0], backlog_subscription_ids[1]]}"
     )
-    assert "dead_letter_message_count" in str(dead_letter_args["filter"])
-    assert dead_letter_args["pageSize"] == 1000
-    assert dead_letter_args["pageToken"] == "${page_token}"
+    assert "dead_letter_message_count" in str(dead_letter_query["filter"])
+    assert dead_letter_query["pageSize"] == 1000
+    assert dead_letter_query["pageToken"] == "${page_token}"
     assert metric_page_assign[1] == {
-        "next_page_token": '${default(map.get(dead_letter_metric, "nextPageToken"), "")}'
+        "next_page_token": '${default(map.get(dead_letter_metric.body, "nextPageToken"), "")}'
     }
     assert dead_letter_init["dlq_visibility_time"] == "${sys.now() + 300}"
     assert dead_letter_by_name["wait_for_dlq_visibility"]["call"] == "sys.sleep_until"

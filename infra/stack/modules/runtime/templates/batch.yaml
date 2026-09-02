@@ -51,7 +51,7 @@ main:
           body:
             overrides:
               containerOverrides:
-                - args: [run-operation, rollback_release, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --args, '$${json.encode_to_string({"reference_year": year})}']
+                - args: [run-operation, rollback_release, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --args, '$${"{\"reference_year\":" + json.encode_to_string(year) + "}"}']
           connector_params: {timeout: 3900}
         result: rollback_execution
         next: finish_rollback
@@ -110,7 +110,7 @@ main:
                   body:
                     overrides:
                       containerOverrides:
-                        - args: [build, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --vars, '$${json.encode_to_string({"release_id": release_id})}']
+                        - args: [build, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --vars, '$${"{\"release_id\":" + json.encode_to_string(release_id) + "}"}']
                   connector_params: {timeout: 3900}
                 result: dbt_build_execution
             - evaluate_quality:
@@ -120,7 +120,7 @@ main:
                   body:
                     overrides:
                       containerOverrides:
-                        - args: [run-operation, evaluate_release, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --args, '$${json.encode_to_string({"release_id": release_id})}']
+                        - args: [run-operation, evaluate_release, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --args, '$${"{\"release_id\":" + json.encode_to_string(release_id) + "}"}']
                   connector_params: {timeout: 3900}
                 result: quality_execution
             - promote_candidate:
@@ -130,7 +130,7 @@ main:
                   body:
                     overrides:
                       containerOverrides:
-                        - args: [run-operation, promote_release, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --args, '$${json.encode_to_string({"release_id": release_id})}']
+                        - args: [run-operation, promote_release, --target, cloud, --project-dir, dbt, --profiles-dir, dbt, --args, '$${"{\"release_id\":" + json.encode_to_string(release_id) + "}"}']
                   connector_params: {timeout: 3900}
                 result: promotion_execution
         except:
@@ -166,9 +166,9 @@ main:
                         except:
                           as: logging_error
                           steps:
-                            - preserve_release_error:
+                            - preserve_release_after_logging_failure:
                                 raise: $${release_error}
-                    - preserve_release_error:
+                    - preserve_release_after_cleanup:
                         raise: $${release_error}
             - raise_release_error:
                 raise: $${release_error}

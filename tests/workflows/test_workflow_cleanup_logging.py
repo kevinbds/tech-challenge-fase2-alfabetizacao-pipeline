@@ -59,8 +59,10 @@ def test_batch_cleanup_logging_cannot_replace_the_release_failure() -> None:
 
     assert log_call["call"] == "sys.log"
     assert set(log_args) == {"severity", "text"}
-    assert logging_handler["preserve_release_error"] == {"raise": "$${release_error}"}
-    assert cleanup_handler["preserve_release_error"] == {"raise": "$${release_error}"}
+    assert logging_handler["preserve_release_after_logging_failure"] == {
+        "raise": "$${release_error}"
+    }
+    assert cleanup_handler["preserve_release_after_cleanup"] == {"raise": "$${release_error}"}
 
 
 def test_stream_cleanup_logging_cannot_replace_the_workflow_failure() -> None:

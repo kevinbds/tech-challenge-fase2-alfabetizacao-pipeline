@@ -337,7 +337,7 @@ cleanup_dataflow:
         next: inspect_candidate_labels
     - inspect_candidate_labels:
         assign:
-          - candidate_labels: ${default(map.get(candidate, "labels"), {})}
+          - candidate_labels: ${default(map.get(candidate, "labels"), json.decode("{}"))}
     - candidate_matches:
         switch:
           - condition: '${get_type(candidate_labels) == "map" and candidate.name == job_name and map.get(candidate_labels, "run_id") == correlation_id and get_type(map.get(candidate, "id")) == "string"}'
@@ -590,19 +590,21 @@ wait_main_subscription_backlogs:
         args:
           subscription: ${main_subscription_ids[subscription_index]}
     - read_backlog_metric:
-        call: googleapis.monitoring.v3.projects.timeSeries.list
+        call: http.get
         args:
-          name: ${"projects/" + project_id}
-          filter: '${"metric.type = \"pubsub.googleapis.com/subscription/num_undelivered_messages\" AND resource.type = \"pubsub_subscription\" AND resource.labels.subscription_id = \"" + subscription_name + "\""}'
-          interval:
-            startTime: ${window_start}
-            endTime: ${time.format(sys.now())}
-          view: FULL
-          pageSize: 1
+          url: ${"https://monitoring.googleapis.com/v3/projects/" + project_id + "/timeSeries"}
+          auth:
+            type: OAuth2
+          query:
+            filter: '${"metric.type = \"pubsub.googleapis.com/subscription/num_undelivered_messages\" AND resource.type = \"pubsub_subscription\" AND resource.labels.subscription_id = \"" + subscription_name + "\""}'
+            interval.startTime: ${window_start}
+            interval.endTime: ${time.format(sys.now())}
+            view: FULL
+            pageSize: 1
         result: backlog_metric
     - normalize_time_series:
         assign:
-          - time_series: ${default(map.get(backlog_metric, "timeSeries"), [])}
+          - time_series: ${default(map.get(backlog_metric.body, "timeSeries"), [])}
     - require_time_series:
         switch:
           - condition: ${len(time_series) == 0}
@@ -663,21 +665,23 @@ wait_no_dead_letter_events:
         args:
           subscription: ${dlq_metric_subscription_ids[subscription_index]}
     - read_dead_letter_metric:
-        call: googleapis.monitoring.v3.projects.timeSeries.list
+        call: http.get
         args:
-          name: ${"projects/" + project_id}
-          filter: '${"metric.type = \"pubsub.googleapis.com/subscription/dead_letter_message_count\" AND resource.type = \"pubsub_subscription\" AND resource.labels.subscription_id = \"" + subscription_name + "\""}'
-          interval:
-            startTime: ${window_start}
-            endTime: ${time.format(sys.now())}
-          view: FULL
-          pageSize: 1000
-          pageToken: ${page_token}
+          url: ${"https://monitoring.googleapis.com/v3/projects/" + project_id + "/timeSeries"}
+          auth:
+            type: OAuth2
+          query:
+            filter: '${"metric.type = \"pubsub.googleapis.com/subscription/dead_letter_message_count\" AND resource.type = \"pubsub_subscription\" AND resource.labels.subscription_id = \"" + subscription_name + "\""}'
+            interval.startTime: ${window_start}
+            interval.endTime: ${time.format(sys.now())}
+            view: FULL
+            pageSize: 1000
+            pageToken: ${page_token}
         result: dead_letter_metric
     - capture_metric_page:
         assign:
-          - dlq_time_series: ${default(map.get(dead_letter_metric, "timeSeries"), [])}
-          - next_page_token: ${default(map.get(dead_letter_metric, "nextPageToken"), "")}
+          - dlq_time_series: ${default(map.get(dead_letter_metric.body, "timeSeries"), [])}
+          - next_page_token: ${default(map.get(dead_letter_metric.body, "nextPageToken"), "")}
           - dlq_series_index: 0
     - choose_series:
         switch:
