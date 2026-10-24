@@ -3,7 +3,7 @@ cryptography==50.0.1
 h2==4.4.1
 hpack==4.2.0
 httplib2==0.32.0
-Pillow==12.3.0
+Pillow==13.0.0
 pip==26.2.1
 pyasn1==0.6.4
 pyOpenSSL==26.4.0
